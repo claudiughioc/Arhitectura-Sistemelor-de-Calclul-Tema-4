@@ -13,6 +13,7 @@
 
 volatile char str[256]  __attribute__ ((aligned(16)));
 extern spe_program_handle_t spu_tema4;
+int piesa_curenta;
 
 typedef struct {
 	int cellno;
@@ -107,6 +108,23 @@ struct pixel ** build_pieces(struct pixel *a, int nr_piese, int piesa_h,
     return piese;
 }
 
+
+void place_piece_on_puzzle(struct pixel **final, struct pixel *piesa,
+        int piesa_h, int piesa_w, int width, int height)
+{
+    printf("PPU pune piesa la pozitia %d\n", piesa_curenta);
+    int i, j, k, source, dest;
+    for (i = 0; i < piesa_h; i++) {
+        for (j = 0; j < piesa_w; j++) {
+            source = i * piesa_w + j;
+            dest = (((piesa_curenta * piesa_w) / width) * piesa_h + i)
+                * width + ((piesa_curenta * piesa_w) % width) + j;
+            (*final)[dest] = piesa[source];
+        }
+    }
+    piesa_curenta++;
+}
+
 int main(int argc, char **argv)
 {
 	spe_context_ptr_t ctxs[SPU_THREADS];
@@ -116,7 +134,7 @@ int main(int argc, char **argv)
 			 event_received;
 	spe_event_handler_ptr_t event_handler;
 	event_handler = spe_event_handler_create();
-	struct pixel *a = NULL;
+	struct pixel *a = NULL, *final = NULL;
 	struct pixel **piese = NULL;
 	int width, height, max_color, i;
 
@@ -143,20 +161,18 @@ int main(int argc, char **argv)
 
 	/* Create the pieces */
 	piese = build_pieces(a, nr_piese, piesa_h, piesa_w, width, height);
+    piesa_curenta = 0;
+    final = malloc_align(width * height * sizeof(struct pixel), 4);
+    if (!final) {
+        perror("Error on alocating final image");
+        return -1;
+    }
+    for (i = 0; i < 32; i++) {
+        place_piece_on_puzzle(&final, piese[0], piesa_h, piesa_w, 
+                width, height);
+    }
     printf("PPU am creat piesele\n");
 
-
-	/* Print a test piece to an output file */
-	printf("PPU writing the final image to output file\n");
-	FILE *fout = fopen("test", "w");
-	fprintf(fout, "P3\n");
-	fprintf(fout, "%d %d\n%d\n", piesa_w, piesa_h, 255);
-    struct pixel *piesa = piese[31];
-	for (i = 0; i < piesa_w * piesa_h; i++) {
-			fprintf(fout, "%d\n%d\n%d\n", piesa[i].red,
-				piesa[i].green, piesa[i].blue);
-	}
-	close(fout);
 
 	/* Create several SPE-threads to execute 'SPU'. */
 	for (i = 0; i < SPU_THREADS; i++) {
@@ -192,12 +208,12 @@ int main(int argc, char **argv)
 
 	/* Print the final image to an output file */
 	printf("PPU writing the final image to output file\n");
-	fout = fopen(output_file, "w");
+	FILE *fout = fopen(output_file, "w");
 	fprintf(fout, "P3\n");
 	fprintf(fout, "%d %d\n%d\n", width, height, 255);
 	for (i = 0; i < width * height; i++) {
-			fprintf(fout, "%d\n%d\n%d\n", a[i].red,
-				a[i].green, a[i].blue);
+			fprintf(fout, "%d\n%d\n%d\n", final[i].red,
+				final[i].green, final[i].blue);
 	}
 	close(fout);
 
