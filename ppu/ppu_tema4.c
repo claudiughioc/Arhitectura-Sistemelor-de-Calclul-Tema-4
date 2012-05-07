@@ -8,6 +8,8 @@
 #include <string.h>
 
 #define SPU_THREADS 	8
+#define LAST            0x01
+#define FIRST           0x02
 #define spu_mfc_ceil128(value)  ((value + 127) & ~127)
 #define spu_mfc_ceil16(value)   ((value +  15) &  ~15)
 
@@ -112,7 +114,7 @@ struct pixel ** build_pieces(struct pixel *a, int nr_piese, int piesa_h,
 void place_piece_on_puzzle(struct pixel **final, struct pixel *piesa,
         int piesa_h, int piesa_w, int width, int height)
 {
-    printf("PPU pune piesa la pozitia %d\n", piesa_curenta);
+    //printf("PPU pune piesa la pozitia %d\n", piesa_curenta);
     int i, j, k, source, dest;
     for (i = 0; i < piesa_h; i++) {
         for (j = 0; j < piesa_w; j++) {
@@ -123,6 +125,26 @@ void place_piece_on_puzzle(struct pixel **final, struct pixel *piesa,
         }
     }
     piesa_curenta++;
+}
+
+
+/* Builds a vector with the vertical extremity of a piece indicated by col*/
+struct pixel * get_vertical_side(struct pixel *piece, int piesa_h,
+        int piesa_w, int column)
+{
+    struct pixel *array = malloc_align(piesa_h * sizeof(struct pixel), 4);
+    if (!array) {
+        perror("Error on allocating extremity");
+        return NULL;
+    }
+    int i;
+    for (i = 0; i < piesa_h; i++) {
+        if (column == LAST)
+            array[i] = piece[(i + 1) * piesa_w - 1];
+        else
+            array[i] = piece[i * piesa_w];
+    }
+    return array;
 }
 
 int main(int argc, char **argv)
@@ -167,6 +189,7 @@ int main(int argc, char **argv)
         perror("Error on alocating final image");
         return -1;
     }
+
     for (i = 0; i < 32; i++) {
         place_piece_on_puzzle(&final, piese[0], piesa_h, piesa_w, 
                 width, height);
@@ -205,6 +228,83 @@ int main(int argc, char **argv)
 
 		spe_event_handler_register(event_handler, &pevents[i]);
 	}
+
+
+    /* Send initial parameters to SPUs */
+    printf("PPU sends initial parameters to SPU\n");
+    for (i = 0; i < SPU_THREADS; i++) {
+        spe_in_mbox_write(ctxs[i], (void *) &piesa_h, 1, 
+           SPE_MBOX_ANY_NONBLOCKING);
+        spe_in_mbox_write(ctxs[i], (void *) &piesa_w, 1, 
+           SPE_MBOX_ANY_NONBLOCKING);
+
+    }
+
+    /* Vector of pieces best scores */
+    int *best_pieces = malloc_align(nr_piese * sizeof(int), 4);
+    best_pieces[0] = -1;
+    int piese_de_prelucrat, nr_candidati, j, spu_qty, k, index_candidate;
+    int factor;
+    struct pixel *curr_piece = piese[0], *candidate;
+    /* The current extremity of a piece */
+    struct pixel *latura_test, *latura_candidat;
+
+    /* Determine best pieces for the first line */
+    printf("PPU extracts vertical extremities to send to SPU\n");
+    piese_de_prelucrat = width / piesa_w - 1;
+    nr_candidati = 31;
+    index_candidate = 1;
+
+    for (i = 0; i < piese_de_prelucrat; i++) {
+        latura_test = get_vertical_side(curr_piece, piesa_h, piesa_w, LAST);
+        for (j = 0; j < SPU_THREADS; j++) {
+            /* Send the margin of the current piece to each SPU */
+            printf("PPU will send pointer to vertical margin to %d,\
+                    pointer %d\n", j, latura_test);
+            int pointer_margin = latura_test;
+            spe_in_mbox_write(ctxs[j], (void *) &pointer_margin,
+                    1, SPE_MBOX_ANY_NONBLOCKING);
+
+            /* Calculate how many pieces will be sent to each SPU */
+            spu_qty = (nr_candidati - (nr_candidati % (SPU_THREADS - 1)))
+                    / (SPU_THREADS - 1);
+            factor = spu_qty;
+            if (j == SPU_THREADS - 1)
+                spu_qty = nr_candidati % (SPU_THREADS - 1);
+            printf("PPU QUANTITY: %d\n", spu_qty);
+            spe_in_mbox_write(ctxs[j], (void *) &spu_qty, 1,
+                    SPE_MBOX_ANY_NONBLOCKING);
+
+            /* Send the appropriate candidates to SPU to check */
+            for (k = 0; k < spu_qty; k++) {
+                if (best_pieces[index_candidate] == -1) {
+                    k--;
+                    index_candidate++;
+                    continue;
+                }
+                printf("PPU will send to %d, piece %d\n", j, index_candidate);
+                candidate = piese[index_candidate];
+                latura_candidat = get_vertical_side(candidate, piesa_h,
+                        piesa_w, FIRST);
+                pointer_margin = latura_candidat;
+                spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
+                        1, SPE_MBOX_ANY_NONBLOCKING);                
+                //FIXME: wait for confirmation from SPU
+
+                index_candidate++;
+
+            }
+            
+        }
+        break;
+
+
+
+        curr_piece = piese[i + 1];
+        nr_candidati--;
+    }
+
+
 
 	/* Print the final image to an output file */
 	printf("PPU writing the final image to output file\n");
