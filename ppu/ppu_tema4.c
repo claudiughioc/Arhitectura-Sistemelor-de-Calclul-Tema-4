@@ -11,6 +11,7 @@
 #define LAST            0x01
 #define FIRST           0x02
 #define SOLVED          (-10)
+#define MAX             65000
 #define spu_mfc_ceil128(value)  ((value + 127) & ~127)
 #define spu_mfc_ceil16(value)   ((value +  15) &  ~15)
 
@@ -32,6 +33,7 @@ struct pixel {
 
 struct spu_response {
     int index;
+    int spu;
     int distance;
 };
 
@@ -163,7 +165,7 @@ int main(int argc, char **argv)
 	spe_event_handler_ptr_t event_handler;
 	event_handler = spe_event_handler_create();
 	struct pixel *a = NULL, *final = NULL;
-	struct pixel **piese = NULL;
+	struct pixel **piese = NULL, **solved_puzzle;
     struct spu_response resp[SPU_THREADS];
 	int width, height, max_color, i, nevents;
 
@@ -190,13 +192,30 @@ int main(int argc, char **argv)
 
 	/* Create the pieces */
 	piese = build_pieces(a, nr_piese, piesa_h, piesa_w, width, height);
+    /* Allocate memory for the zolved puzzle */
+    solved_puzzle = malloc_align(nr_piese * sizeof(struct pixel *), 4);
+    if (!solved_puzzle) {
+        perror("Error on allocating solved puzzle");
+        return -1;
+    }
+    for (i = 0; i < nr_piese; i++) {
+        solved_puzzle[i] = malloc_align(piesa_h * piesa_w *
+                sizeof(struct pixel), 4);
+        if (!solved_puzzle[i]) {
+            perror("Error on allocating solved piece");
+            free(solved_puzzle);
+            return -1;
+        }
+    }
+    solved_puzzle[0] = piese[0];
     piesa_curenta = 0;
+    /* Allocate memory for the final image */
     final = malloc_align(width * height * sizeof(struct pixel), 4);
     if (!final) {
         perror("Error on alocating final image");
         return -1;
     }
-
+    /* Place some test pieces on the final image */
     for (i = 0; i < 32; i++) {
         place_piece_on_puzzle(&final, piese[0], piesa_h, piesa_w, 
                 width, height);
@@ -254,8 +273,8 @@ int main(int argc, char **argv)
     int *best_pieces = malloc_align(nr_piese * sizeof(int), 4);
     best_pieces[0] = SOLVED;
     int nr_candidati, j, spu_qty, k, index_candidate;
-    int factor;
-    struct pixel *curr_piece = piese[0], *candidate;
+    int factor, index, win;
+    struct pixel *curr_piece = solved_puzzle[0], *candidate;
     /* The current extremity of a piece */
     struct pixel *latura_test, *latura_candidat;
 
@@ -334,6 +353,7 @@ int main(int argc, char **argv)
             spe_out_intr_mbox_read(event_received.spe, (&data), 1,
                     SPE_MBOX_ANY_NONBLOCKING);
             int SPU_id = event_received.data.u32;
+            resp[SPU_id].spu = SPU_id;
             if (resp[SPU_id].index == -1)
                 resp[SPU_id].index = data;
             else
@@ -341,22 +361,40 @@ int main(int argc, char **argv)
             printf("PPU got final response from SPU %d, data %d\n",
                     SPU_id, data);
         }
-        for (j = 0; j < SPU_THREADS; j++)
+
+
+        /* Determine the best piece */
+        struct spu_response best_piece;
+        best_piece.distance = MAX;
+        for (j = 0; j < SPU_THREADS; j++) {
             printf("PPU resp %d: %d, %d\n", j, resp[j].index,
                     resp[j].distance);
-
-
-
-
-
-
-
-        
+            if (resp[j].distance < best_piece.distance)
+                best_piece = resp[j];
+        }
+        printf("PPU BEST PIECE: spu: %d, index: %d, distance %d\n",
+                best_piece.spu, best_piece.index, best_piece.distance);
+        for (j = 0; j < nr_piese; j++) {
+            if (best_pieces[j] == -1 * best_piece.spu) {
+                index = 0;
+                for (k = 0; k <= best_piece.index; k++) {
+                    if (best_pieces[j + index] == SOLVED) {
+                        k--;
+                        index++;
+                        continue;
+                    }
+                    index++;
+                }
+                win = index + j - 1;
+                break;
+            }
+        }
+        printf("PPU winning piece %d\n", win);
         best_pieces[i + 1] = SOLVED;
 
 
 
-        curr_piece = piese[i + 1];
+        curr_piece = solved_puzzle[i + 1];
         nr_candidati--;
         printf("\n\n\n___________PPU goes to next piece, choosing \
                 from %d candidates________\n", nr_candidati);
