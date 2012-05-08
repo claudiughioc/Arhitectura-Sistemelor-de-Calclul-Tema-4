@@ -158,7 +158,7 @@ int main(int argc, char **argv)
 	event_handler = spe_event_handler_create();
 	struct pixel *a = NULL, *final = NULL;
 	struct pixel **piese = NULL;
-	int width, height, max_color, i;
+	int width, height, max_color, i, nevents;
 
 
 	printf("\n\n\n\n-----------PPU------------\n");
@@ -289,10 +289,19 @@ int main(int argc, char **argv)
                 pointer_margin = latura_candidat;
                 spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
                         1, SPE_MBOX_ANY_NONBLOCKING);                
-                //FIXME: wait for confirmation from SPU
+
+                /* Wait for confirmation from SPUs */
+                nevents = spe_event_wait(event_handler, &event_received, 1, -1);
+                if (nevents <= 0) {
+                    //FIXME:ai belit pula
+                }
+                int response;
+                while(spe_out_intr_mbox_status(event_received.spe) < 1);
+                spe_out_intr_mbox_read(event_received.spe, &response, 1,
+                        SPE_MBOX_ANY_NONBLOCKING);
+                printf("PPU am primit confirmare de la SPU %d\n", response);
 
                 index_candidate++;
-
             }
             
         }

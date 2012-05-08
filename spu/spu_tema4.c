@@ -78,21 +78,10 @@ int main(unsigned long long speid, unsigned long long argp,
         }
         mfc_get((void *) candidates[i], (void *)pointer_margin, 
                 (uint32_t) piesa_h * sizeof(struct pixel), tag_id, 0, 0);
+        int response = (int)argp;
+        spu_write_out_intr_mbox(response);
     }
     printf("\tSPU %lld got all the candidates for the first line from PPU\n");
-
-    if (argp == 0) {
-        printf("\t\tSPU %lld vertical:\n", argp);
-        for (i = 0; i < piesa_h; i++)
-            printf("\t\t%d\n", vertical[i].green);
-        printf("\t\tSPU %lld candidat 0:\n", argp);
-        for (i = 0; i < piesa_h; i++)
-            printf("\t\t%d\n", candidates[0][i].green);
-
-    }
-
-
-
 
 
 
