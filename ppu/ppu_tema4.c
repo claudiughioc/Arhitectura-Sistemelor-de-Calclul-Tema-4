@@ -232,10 +232,13 @@ int main(int argc, char **argv)
 
     /* Send initial parameters to SPUs */
     printf("PPU sends initial parameters to SPU\n");
+    int piese_de_prelucrat = width / piesa_w - 1;
     for (i = 0; i < SPU_THREADS; i++) {
         spe_in_mbox_write(ctxs[i], (void *) &piesa_h, 1, 
            SPE_MBOX_ANY_NONBLOCKING);
         spe_in_mbox_write(ctxs[i], (void *) &piesa_w, 1, 
+           SPE_MBOX_ANY_NONBLOCKING);
+        spe_in_mbox_write(ctxs[i], (void *) &piese_de_prelucrat, 1, 
            SPE_MBOX_ANY_NONBLOCKING);
 
     }
@@ -243,7 +246,7 @@ int main(int argc, char **argv)
     /* Vector of pieces best scores */
     int *best_pieces = malloc_align(nr_piese * sizeof(int), 4);
     best_pieces[0] = -1;
-    int piese_de_prelucrat, nr_candidati, j, spu_qty, k, index_candidate;
+    int nr_candidati, j, spu_qty, k, index_candidate;
     int factor;
     struct pixel *curr_piece = piese[0], *candidate;
     /* The current extremity of a piece */
@@ -251,12 +254,12 @@ int main(int argc, char **argv)
 
     /* Determine best pieces for the first line */
     printf("PPU extracts vertical extremities to send to SPU\n");
-    piese_de_prelucrat = width / piesa_w - 1;
     nr_candidati = 31;
     index_candidate = 1;
 
     for (i = 0; i < piese_de_prelucrat; i++) {
         latura_test = get_vertical_side(curr_piece, piesa_h, piesa_w, LAST);
+        index_candidate = 0;
         for (j = 0; j < SPU_THREADS; j++) {
             /* Send the margin of the current piece to each SPU */
             printf("PPU will send pointer to vertical margin to %d,\
@@ -303,14 +306,16 @@ int main(int argc, char **argv)
 
                 index_candidate++;
             }
-            
         }
-        break;
+        /* Get the result for the current piece from SPUs */
+        best_pieces[i + 1] = -1;
 
 
 
         curr_piece = piese[i + 1];
         nr_candidati--;
+        printf("\n\n\n___________PPU goes to next piece, choosing \
+                from %d candidates________\n", nr_candidati);
     }
 
 
