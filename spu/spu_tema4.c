@@ -118,7 +118,6 @@ int main(unsigned long long speid, unsigned long long argp,
                 final_index = i;
             }
         }
-        printf("\tSPU %lld chose cand %d, dist %d\n", argp, final_index, min_distance);
 
 
         /* Wait for PPU to ask for results */
@@ -187,7 +186,27 @@ int main(unsigned long long speid, unsigned long long argp,
         }
         printf("\tSPU %lld got all the candidates for the first line from PPU\n", argp);
 
+        /* Calculate the best candidate for this piece ___COLUMN */
+        int * distances = malloc_align(nr_candidati * sizeof(int), 4);
+        int final_index, min_distance = MAX;
+        for (i = 0; i < nr_candidati; i++) {
+            distances[i] = calculate_manhattan(candidates[i],
+                    horizontal, piesa_w);
+            if (distances[i] < min_distance) {
+                min_distance = distances[i];
+                final_index = i;
+            }
+        }
 
+        /* Wait for PPU to ask for results */
+        int confirm;
+        while (spu_stat_in_mbox() <= 0);
+        confirm = spu_read_in_mbox();
+
+
+        /* Send the results back to PPU */
+        spu_write_out_intr_mbox(final_index);
+        spu_write_out_intr_mbox(min_distance);
 
         /* Free memory for candidates */
         for (i = 0; i < nr_candidati; i++)

@@ -405,7 +405,7 @@ int main(int argc, char **argv)
         }
         printf("PPU winning piece %d\n", win);
         best_pieces[win] = SOLVED;
-        solved_puzzle[i +1] = piese[win];
+        solved_puzzle[i + 1] = piese[win];
         place_piece_on_puzzle(&final, piese[win], piesa_h, piesa_w,
                 width, height, i + 1);
 
@@ -479,6 +479,69 @@ int main(int argc, char **argv)
                 index_candidate++;
             }
         }
+
+        /* Ask for results from each SPU */
+        for (j = 0; j < SPU_THREADS; j++)
+            spe_in_mbox_write(ctxs[j], (void *) &j, 1, 
+                    SPE_MBOX_ANY_NONBLOCKING);
+        printf("PPU asked for results from all the spu\n");
+
+        /* Get the result for the current piece from SPUs */
+        for (j = 0; j < SPU_THREADS; j++)
+            resp[j].index = -1;
+        for (j = 0; j < 2 * SPU_THREADS; j++)
+        {
+            printf("PPU intru sa primesc rezultat\n");
+            int data;
+            spe_event_wait(event_handler, &event_received, 1, -1);
+            while (spe_out_intr_mbox_status(event_received.spe) < 1);
+            spe_out_intr_mbox_read(event_received.spe, (&data), 1,
+                    SPE_MBOX_ANY_NONBLOCKING);
+            int SPU_id = event_received.data.u32;
+            resp[SPU_id].spu = SPU_id;
+            if (resp[SPU_id].index == -1)
+                resp[SPU_id].index = data;
+            else
+                resp[SPU_id].distance = data;
+            printf("PPU got final response from SPU %d, data %d\n",
+                    SPU_id, data);
+        }
+
+        /* Determine the best piece */
+        struct spu_response best_response;
+        best_response.distance = MAX;
+        for (j = 0; j < SPU_THREADS; j++) {
+            printf("PPU resp %d: %d, %d\n", j, resp[j].index,
+                    resp[j].distance);
+            if (resp[j].distance < best_response.distance)
+                best_response = resp[j];
+        }
+        printf("PPU BEST PIECE: spu: %d, index: %d, distance %d\n",
+                best_response.spu, best_response.index, best_response.distance);
+        for (j = 0; j < nr_piese; j++) {
+            if (best_pieces[j] == -1 * best_response.spu) {
+                index = 0;
+                for (k = 0; k <= best_response.index; k++) {
+                    if (best_pieces[j + index] == SOLVED) {
+                        k--;
+                        index++;
+                        continue;
+                    }
+                    index++;
+                }
+                win = index + j - 1;
+                break;
+            }
+        }
+        printf("PPU winning piece %d\n", win);
+        best_pieces[win] = SOLVED;
+        solved_puzzle[(i + 1) * (width / piesa_w)] = piese[win];
+        place_piece_on_puzzle(&final, piese[win], piesa_h, piesa_w,
+                width, height, (i + 1) * (width / piesa_w));
+
+
+
+
 
         curr_piece = solved_puzzle[(i + 1) * (width / piesa_w)];
         nr_candidati--;
