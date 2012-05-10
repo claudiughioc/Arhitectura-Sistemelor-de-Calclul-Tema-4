@@ -49,6 +49,47 @@ void *ppu_pthread_function(void *thread_arg) {
 	pthread_exit(NULL);
 }
 
+static void ask_for_results(spe_context_ptr_t *ctxs)
+{
+    int j;
+    for (j = 0; j < SPU_THREADS; j++)
+        spe_in_mbox_write(ctxs[j], (void *) &j, 1, 
+                SPE_MBOX_ANY_NONBLOCKING);
+    printf("PPU asked for results from all the spu\n");
+}
+
+static int best_fit(struct spu_response *resp, int nr_piese,
+           int *best_pieces)
+{
+    int j, k, index, win;
+    struct spu_response best_response;
+    best_response.distance = MAX;
+    for (j = 0; j < SPU_THREADS; j++) {
+        printf("PPU resp %d: %d, %d\n", j, resp[j].index,
+                resp[j].distance);
+        if (resp[j].distance < best_response.distance)
+            best_response = resp[j];
+    }
+    printf("PPU BEST PIECE: spu: %d, index: %d, distance %d\n",
+            best_response.spu, best_response.index, best_response.distance);
+    for (j = 0; j < nr_piese; j++) {
+        if (best_pieces[j] == -1 * best_response.spu) {
+            index = 0;
+            for (k = 0; k <= best_response.index; k++) {
+                if (best_pieces[j + index] == SOLVED) {
+                    k--;
+                    index++;
+                    continue;
+                }
+                index++;
+            }
+            win = index + j - 1;
+            break;
+        }
+    }
+    return win;
+}
+
 void read_from_file(FILE *fin, struct pixel **a, int *width, int *height,
 		int *max_color)
 {
@@ -350,10 +391,7 @@ int main(int argc, char **argv)
         }
 
         /* Ask for results from each SPU */
-        for (j = 0; j < SPU_THREADS; j++)
-            spe_in_mbox_write(ctxs[j], (void *) &j, 1, 
-                    SPE_MBOX_ANY_NONBLOCKING);
-        printf("PPU asked for results from all the spu\n");
+        ask_for_results(ctxs);
 
         /* Get the result for the current piece from SPUs */
         for (j = 0; j < SPU_THREADS; j++)
@@ -378,31 +416,9 @@ int main(int argc, char **argv)
 
 
         /* Determine the best piece */
-        struct spu_response best_response;
-        best_response.distance = MAX;
-        for (j = 0; j < SPU_THREADS; j++) {
-            printf("PPU resp %d: %d, %d\n", j, resp[j].index,
-                    resp[j].distance);
-            if (resp[j].distance < best_response.distance)
-                best_response = resp[j];
-        }
-        printf("PPU BEST PIECE: spu: %d, index: %d, distance %d\n",
-                best_response.spu, best_response.index, best_response.distance);
-        for (j = 0; j < nr_piese; j++) {
-            if (best_pieces[j] == -1 * best_response.spu) {
-                index = 0;
-                for (k = 0; k <= best_response.index; k++) {
-                    if (best_pieces[j + index] == SOLVED) {
-                        k--;
-                        index++;
-                        continue;
-                    }
-                    index++;
-                }
-                win = index + j - 1;
-                break;
-            }
-        }
+        win = best_fit(resp, nr_piese, best_pieces);
+
+        /* Update the solved puzzle and check as SOLVED */
         printf("PPU winning piece %d\n", win);
         best_pieces[win] = SOLVED;
         solved_puzzle[i + 1] = piese[win];
@@ -481,10 +497,7 @@ int main(int argc, char **argv)
         }
 
         /* Ask for results from each SPU */
-        for (j = 0; j < SPU_THREADS; j++)
-            spe_in_mbox_write(ctxs[j], (void *) &j, 1, 
-                    SPE_MBOX_ANY_NONBLOCKING);
-        printf("PPU asked for results from all the spu\n");
+        ask_for_results(ctxs);
 
         /* Get the result for the current piece from SPUs */
         for (j = 0; j < SPU_THREADS; j++)
@@ -508,46 +521,33 @@ int main(int argc, char **argv)
         }
 
         /* Determine the best piece */
-        struct spu_response best_response;
-        best_response.distance = MAX;
-        for (j = 0; j < SPU_THREADS; j++) {
-            printf("PPU resp %d: %d, %d\n", j, resp[j].index,
-                    resp[j].distance);
-            if (resp[j].distance < best_response.distance)
-                best_response = resp[j];
-        }
-        printf("PPU BEST PIECE: spu: %d, index: %d, distance %d\n",
-                best_response.spu, best_response.index, best_response.distance);
-        for (j = 0; j < nr_piese; j++) {
-            if (best_pieces[j] == -1 * best_response.spu) {
-                index = 0;
-                for (k = 0; k <= best_response.index; k++) {
-                    if (best_pieces[j + index] == SOLVED) {
-                        k--;
-                        index++;
-                        continue;
-                    }
-                    index++;
-                }
-                win = index + j - 1;
-                break;
-            }
-        }
+        win = best_fit(resp, nr_piese, best_pieces);
+
         printf("PPU winning piece %d\n", win);
         best_pieces[win] = SOLVED;
         solved_puzzle[(i + 1) * (width / piesa_w)] = piese[win];
         place_piece_on_puzzle(&final, piese[win], piesa_h, piesa_w,
                 width, height, (i + 1) * (width / piesa_w));
 
-
-
-
-
         curr_piece = solved_puzzle[(i + 1) * (width / piesa_w)];
         nr_candidati--;
         printf("\n\n\n___________PPU goes to next piece, choosing \
                 from %d candidates________\n", nr_candidati);
     }
+
+
+
+
+    /*------------REST OF THE PUZZLE------------*/
+    printf("\n\n\n\n_____PPU solving the REST OF THE PUZZLE______\n");
+    piese_de_prelucrat = nr_piese - (height / piesa_h) -
+            (width / piesa_w - 1);
+    printf("PPU will solve %d pieces\n", piese_de_prelucrat);
+
+
+
+
+
 
 
 	/* Print the final image to an output file */
@@ -560,6 +560,7 @@ int main(int argc, char **argv)
 				final[i].green, final[i].blue);
 	}
 	close(fout);
+
 
 	/* Wait for SPU-thread to complete execution. */
 	for (i = 0; i < SPU_THREADS; i++) {
