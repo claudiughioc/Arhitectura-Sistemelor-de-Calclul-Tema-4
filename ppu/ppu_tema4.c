@@ -122,7 +122,6 @@ struct pixel ** build_pieces(struct pixel *a, int nr_piese, int piesa_h,
 void place_piece_on_puzzle(struct pixel **final, struct pixel *piesa,
         int piesa_h, int piesa_w, int width, int height, int position)
 {
-    //printf("PPU pune piesa la pozitia %d\n", piesa_curenta);
     int i, j, k, source, dest;
     for (i = 0; i < piesa_h; i++) {
         for (j = 0; j < piesa_w; j++) {
@@ -151,6 +150,25 @@ struct pixel * get_vertical_side(struct pixel *piece, int piesa_h,
             array[i] = piece[(i + 1) * piesa_w - 1];
         else
             array[i] = piece[i * piesa_w];
+    }
+    return array;
+}
+
+/* Builds a vector with the horizontal extremity of a piece indicated by row */
+struct pixel* get_horizontal_side(struct pixel *piece, int piesa_h,
+        int piesa_w, int row)
+{
+    struct pixel *array = malloc_align(piesa_w * sizeof(struct pixel), 4);
+    if (!array) {
+        perror("Error on allocating extremity");
+        return NULL;
+    }
+    int i;
+    for (i = 0; i < piesa_w; i++) {
+        if (row == LAST)
+            array[i] = piece[(piesa_h - 1) * piesa_w + i];
+        else
+            array[i] = piece[i];
     }
     return array;
 }
@@ -294,7 +312,6 @@ int main(int argc, char **argv)
             /* Calculate how many pieces will be sent to each SPU */
             spu_qty = (nr_candidati - (nr_candidati % (SPU_THREADS - 1)))
                     / (SPU_THREADS - 1);
-            factor = spu_qty;
             if (j == SPU_THREADS - 1)
                 spu_qty = nr_candidati % (SPU_THREADS - 1);
             printf("PPU QUANTITY: %d\n", spu_qty);
@@ -402,6 +419,72 @@ int main(int argc, char **argv)
 
 
     /* Determine the best pieces for the first column */
+    printf("\n\n\n\n_____PPU solving the column____\n");
+    piese_de_prelucrat = height / piesa_h - 1;
+    printf("PPU will solve %d pieces\n", piese_de_prelucrat);
+    curr_piece = solved_puzzle[0];
+    /* Send the number of pieces to solve to SPU */
+    for (i = 0; i < SPU_THREADS; i++)
+        spe_in_mbox_write(ctxs[i], (void *) &piese_de_prelucrat, 1, 
+                SPE_MBOX_ANY_NONBLOCKING);
+
+    for (i = 0; i < piese_de_prelucrat; i++) {
+        latura_test = get_horizontal_side(curr_piece, piesa_h, piesa_w, LAST);
+        index_candidate = 0;
+        for (j = 0; j < SPU_THREADS; j++) {
+            /* Send the margin of the current piece to each SPU */
+            printf("PPU will send pointer to horizontal margin to %d,\
+                    pointer %d\n", j, latura_test);
+            int pointer_margin = latura_test;
+            spe_in_mbox_write(ctxs[j], (void *) &pointer_margin,
+                    1, SPE_MBOX_ANY_NONBLOCKING);
+
+            /* Calculate how many pieces will be sent to each SPU */
+            spu_qty = (nr_candidati - (nr_candidati % (SPU_THREADS - 1)))
+                    / (SPU_THREADS - 1);
+            if (j == SPU_THREADS - 1)
+                spu_qty = nr_candidati % (SPU_THREADS - 1);
+            printf("PPU QUANTITY: %d\n", spu_qty);
+            spe_in_mbox_write(ctxs[j], (void *) &spu_qty, 1,
+                    SPE_MBOX_ANY_NONBLOCKING);
+
+            /* Send the appropriate candidates to SPU to check */
+            for (k = 0; k < spu_qty; k++) {
+                if (best_pieces[index_candidate] == SOLVED) {
+                    k--;
+                    index_candidate++;
+                    continue;
+                }
+                printf("PPU will send to %d, piece %d\n", j, index_candidate);
+                candidate = piese[index_candidate];
+                best_pieces[index_candidate] = -1 * j;
+                latura_candidat = get_horizontal_side(candidate, piesa_h,
+                        piesa_w, FIRST);
+                pointer_margin = latura_candidat;
+                spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
+                        1, SPE_MBOX_ANY_NONBLOCKING);                
+
+
+                /* Wait for confirmation from SPUs */
+                nevents = spe_event_wait(event_handler, &event_received, 1, -1);
+                if (nevents <= 0) {
+                    //FIXME:ai belit pula
+                }
+                int response;
+                while(spe_out_intr_mbox_status(event_received.spe) < 1);
+                spe_out_intr_mbox_read(event_received.spe, &response, 1,
+                        SPE_MBOX_ANY_NONBLOCKING);
+                printf("PPU am primit confirmare de la SPU %d\n", response);
+
+                index_candidate++;
+            }
+        }
+
+        curr_piece = solved_puzzle[(i + 1) * (width / piesa_w)];
+        nr_candidati--;
+        printf("\n\n\n___________PPU goes to next piece, choosing \
+                from %d candidates________\n", nr_candidati);
+    }
 
 
 	/* Print the final image to an output file */

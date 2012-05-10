@@ -37,6 +37,7 @@ int main(unsigned long long speid, unsigned long long argp,
     unsigned int piesa_h, piesa_w, pointer_margin, nr_candidati, i,
                  piese_de_prelucrat, j;
     struct pixel *horizontal, *vertical;
+    uint32_t last_tag;
 
     /* Wait for initial parameters from PPU */
     while (spu_stat_in_mbox() <= 0);
@@ -81,7 +82,6 @@ int main(unsigned long long speid, unsigned long long argp,
             perror("Error on allocating candidates");
             return -1;
         }
-
         for (i = 0; i < nr_candidati; i++) {
             candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
             if (!candidates[i]) {
@@ -97,6 +97,7 @@ int main(unsigned long long speid, unsigned long long argp,
                 printf("\tSPU cannot allocate tag\n");
                 return -1;
             }
+            last_tag = tag_id;
             mfc_get((void *) candidates[i], (void *)pointer_margin, 
                     (uint32_t) piesa_h * sizeof(struct pixel), tag_id, 0, 0);
             int response = (int)argp;
@@ -136,6 +137,64 @@ int main(unsigned long long speid, unsigned long long argp,
         free(candidates);
         free(distances);
     }
+
+
+
+    /* ----------Processing the first column ------------*/
+    /* Wait for the number of pieces to solve */
+    while (spu_stat_in_mbox() <= 0);
+    piese_de_prelucrat = spu_read_in_mbox();
+    printf("\tSPU %lld got number of pieces for column: %d\n",
+            argp, piese_de_prelucrat);
+    printf("\tSPU %lld last tag: %d\n", argp, last_tag);
+    for (j = 0; j < piese_de_prelucrat; j++) {
+        /* Get the first margin from PPU */
+        while (spu_stat_in_mbox() <= 0);
+        pointer_margin = spu_read_in_mbox();
+        mfc_get((void *) horizontal, (void *)pointer_margin, 
+                (uint32_t) piesa_h * sizeof(struct pixel), last_tag, 0, 0);
+        printf("\tSPU %lld got margin from PPU\n", argp);
+
+
+        /* Get the number of candidates for the first line */
+        while (spu_stat_in_mbox() <= 0);
+        nr_candidati = spu_read_in_mbox();
+        printf("\tSPU %lld voi primi %d candidati\n", argp, nr_candidati);
+
+        /* Get the candidates from PPU */
+        struct pixel **candidates = malloc_align(nr_candidati *
+                sizeof(struct pixel *), 4);
+        if (!candidates) {
+            perror("Error on allocating candidates");
+            return -1;
+        }
+        for (i = 0; i < nr_candidati; i++) {
+            candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
+            if (!candidates[i]) {
+                perror("Error on allocating candidate");
+                free(candidates);
+                return -1;
+            }
+
+            while (spu_stat_in_mbox() <= 0);
+            pointer_margin = spu_read_in_mbox();
+
+            mfc_get((void *) candidates[i], (void *)pointer_margin, 
+                    (uint32_t) piesa_w * sizeof(struct pixel), last_tag, 0, 0);
+
+            int response = (int)argp;
+            spu_write_out_intr_mbox(response);
+        }
+        printf("\tSPU %lld got all the candidates for the first line from PPU\n", argp);
+
+
+
+        /* Free memory for candidates */
+        for (i = 0; i < nr_candidati; i++)
+            free(candidates[i]);
+        free(candidates);
+    }
+
 
 	return 0;
 }
