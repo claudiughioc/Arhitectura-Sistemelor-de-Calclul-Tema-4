@@ -120,15 +120,15 @@ struct pixel ** build_pieces(struct pixel *a, int nr_piese, int piesa_h,
 
 
 void place_piece_on_puzzle(struct pixel **final, struct pixel *piesa,
-        int piesa_h, int piesa_w, int width, int height)
+        int piesa_h, int piesa_w, int width, int height, int position)
 {
     //printf("PPU pune piesa la pozitia %d\n", piesa_curenta);
     int i, j, k, source, dest;
     for (i = 0; i < piesa_h; i++) {
         for (j = 0; j < piesa_w; j++) {
             source = i * piesa_w + j;
-            dest = (((piesa_curenta * piesa_w) / width) * piesa_h + i)
-                * width + ((piesa_curenta * piesa_w) % width) + j;
+            dest = (((position * piesa_w) / width) * piesa_h + i)
+                * width + ((position * piesa_w) % width) + j;
             (*final)[dest] = piesa[source];
         }
     }
@@ -215,11 +215,10 @@ int main(int argc, char **argv)
         perror("Error on alocating final image");
         return -1;
     }
-    /* Place some test pieces on the final image */
-    for (i = 0; i < 32; i++) {
-        place_piece_on_puzzle(&final, piese[0], piesa_h, piesa_w, 
-                width, height);
-    }
+    /* Place the first piece on the final image */
+    place_piece_on_puzzle(&final, piese[0], piesa_h, piesa_w, 
+            width, height, 0);
+
     printf("PPU am creat piesele\n");
 
 
@@ -281,8 +280,6 @@ int main(int argc, char **argv)
     /* Determine best pieces for the first line */
     printf("PPU extracts vertical extremities to send to SPU\n");
     nr_candidati = 31;
-    index_candidate = 1;
-
     for (i = 0; i < piese_de_prelucrat; i++) {
         latura_test = get_vertical_side(curr_piece, piesa_h, piesa_w, LAST);
         index_candidate = 0;
@@ -364,20 +361,20 @@ int main(int argc, char **argv)
 
 
         /* Determine the best piece */
-        struct spu_response best_piece;
-        best_piece.distance = MAX;
+        struct spu_response best_response;
+        best_response.distance = MAX;
         for (j = 0; j < SPU_THREADS; j++) {
             printf("PPU resp %d: %d, %d\n", j, resp[j].index,
                     resp[j].distance);
-            if (resp[j].distance < best_piece.distance)
-                best_piece = resp[j];
+            if (resp[j].distance < best_response.distance)
+                best_response = resp[j];
         }
         printf("PPU BEST PIECE: spu: %d, index: %d, distance %d\n",
-                best_piece.spu, best_piece.index, best_piece.distance);
+                best_response.spu, best_response.index, best_response.distance);
         for (j = 0; j < nr_piese; j++) {
-            if (best_pieces[j] == -1 * best_piece.spu) {
+            if (best_pieces[j] == -1 * best_response.spu) {
                 index = 0;
-                for (k = 0; k <= best_piece.index; k++) {
+                for (k = 0; k <= best_response.index; k++) {
                     if (best_pieces[j + index] == SOLVED) {
                         k--;
                         index++;
@@ -390,16 +387,21 @@ int main(int argc, char **argv)
             }
         }
         printf("PPU winning piece %d\n", win);
-        best_pieces[i + 1] = SOLVED;
+        best_pieces[win] = SOLVED;
+        solved_puzzle[i +1] = piese[win];
+        place_piece_on_puzzle(&final, piese[win], piesa_h, piesa_w,
+                width, height, i + 1);
 
-
-
+        /* Go to the next piece */
         curr_piece = solved_puzzle[i + 1];
         nr_candidati--;
         printf("\n\n\n___________PPU goes to next piece, choosing \
                 from %d candidates________\n", nr_candidati);
     }
 
+
+
+    /* Determine the best pieces for the first column */
 
 
 	/* Print the final image to an output file */
