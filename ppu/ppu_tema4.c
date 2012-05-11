@@ -334,7 +334,7 @@ int main(int argc, char **argv)
     int factor, index, win;
     struct pixel *curr_piece = solved_puzzle[0], *candidate;
     /* The current extremity of a piece */
-    struct pixel *latura_test, *latura_candidat;
+    struct pixel *latura_test, *latura_candidat, *left_margin, *top_margin;
 
     /* Determine best pieces for the first line */
     printf("PPU extracts vertical extremities to send to SPU\n");
@@ -384,7 +384,6 @@ int main(int argc, char **argv)
                 while(spe_out_intr_mbox_status(event_received.spe) < 1);
                 spe_out_intr_mbox_read(event_received.spe, &response, 1,
                         SPE_MBOX_ANY_NONBLOCKING);
-                printf("PPU am primit confirmare de la SPU %d\n", response);
 
                 index_candidate++;
             }
@@ -490,7 +489,6 @@ int main(int argc, char **argv)
                 while(spe_out_intr_mbox_status(event_received.spe) < 1);
                 spe_out_intr_mbox_read(event_received.spe, &response, 1,
                         SPE_MBOX_ANY_NONBLOCKING);
-                printf("PPU am primit confirmare de la SPU %d\n", response);
 
                 index_candidate++;
             }
@@ -543,7 +541,150 @@ int main(int argc, char **argv)
     piese_de_prelucrat = nr_piese - (height / piesa_h) -
             (width / piesa_w - 1);
     printf("PPU will solve %d pieces\n", piese_de_prelucrat);
+    struct pixel *left_piece = solved_puzzle[(width / piesa_w)];
+    struct pixel *top_piece = solved_puzzle[1];
 
+    /* Send the number of pieces to solve to SPU */
+    for (i = 0; i < SPU_THREADS; i++)
+        spe_in_mbox_write(ctxs[i], (void *) &piese_de_prelucrat, 1, 
+                SPE_MBOX_ANY_NONBLOCKING);
+    for (i = 0; i < piese_de_prelucrat; i++) {
+        left_margin = get_vertical_side(left_piece, piesa_h, piesa_w, LAST);
+        top_margin = get_horizontal_side(top_piece, piesa_h, piesa_w, LAST);
+        index_candidate = 0;
+
+        for (j = 0; j < SPU_THREADS; j++) {
+            /* Send the left margin to each SPU */
+            int pointer_margin = left_margin;
+            spe_in_mbox_write(ctxs[j], (void *) &pointer_margin,
+                    1, SPE_MBOX_ANY_NONBLOCKING);
+            /* Wait for confirmation from SPUs */
+            nevents = spe_event_wait(event_handler, &event_received, 1, -1);
+            if (nevents <= 0) {
+                //FIXME:ai belit pula
+            }
+            int response;
+            while(spe_out_intr_mbox_status(event_received.spe) < 1);
+            spe_out_intr_mbox_read(event_received.spe, &response, 1,
+                    SPE_MBOX_ANY_NONBLOCKING);
+
+
+            /* Send the top margin to each SPU */
+            pointer_margin = top_margin;
+            spe_in_mbox_write(ctxs[j], (void *) &pointer_margin,
+                    1, SPE_MBOX_ANY_NONBLOCKING);
+            /* Wait for confirmation from SPUs */
+            nevents = spe_event_wait(event_handler, &event_received, 1, -1);
+            if (nevents <= 0) {
+                //FIXME:ai belit pula
+            }
+            while(spe_out_intr_mbox_status(event_received.spe) < 1);
+            spe_out_intr_mbox_read(event_received.spe, &response, 1,
+                    SPE_MBOX_ANY_NONBLOCKING);
+
+            /* Calculate how many pieces will be sent to each SPU */
+            spu_qty = (nr_candidati - (nr_candidati % (SPU_THREADS - 1)))
+                    / (SPU_THREADS - 1);
+            if (j == SPU_THREADS - 1)
+                spu_qty = nr_candidati % (SPU_THREADS - 1);
+            printf("PPU QUANTITY: %d\n", spu_qty);
+            spe_in_mbox_write(ctxs[j], (void *) &spu_qty, 1,
+                    SPE_MBOX_ANY_NONBLOCKING);
+
+
+            /* Send the appropriate candidates to SPU to check */
+            for (k = 0; k < spu_qty; k++) {
+                if (best_pieces[index_candidate] == SOLVED) {
+                    k--;
+                    index_candidate++;
+                    continue;
+                }
+                printf("PPU will send to %d, piece %d\n", j, index_candidate);
+                candidate = piese[index_candidate];
+                best_pieces[index_candidate] = -1 * j;
+
+                /* Send the horizontal top margin */
+                latura_candidat = get_horizontal_side(candidate, piesa_h,
+                        piesa_w, FIRST);
+                pointer_margin = latura_candidat;
+                spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
+                        1, SPE_MBOX_ANY_NONBLOCKING);                
+
+                /* Wait for confirmation from SPUs */
+                nevents = spe_event_wait(event_handler, &event_received, 1, -1);
+                if (nevents <= 0) {
+                    //FIXME:ai belit pula
+                }
+                int response;
+                while(spe_out_intr_mbox_status(event_received.spe) < 1);
+                spe_out_intr_mbox_read(event_received.spe, &response, 1,
+                        SPE_MBOX_ANY_NONBLOCKING);
+
+
+                /* Send the vertical left margin */
+                latura_candidat = get_vertical_side(candidate, piesa_h,
+                        piesa_w, FIRST);
+                pointer_margin = latura_candidat;
+                spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
+                        1, SPE_MBOX_ANY_NONBLOCKING);                
+
+                /* Wait for confirmation from SPUs */
+                nevents = spe_event_wait(event_handler, &event_received, 1, -1);
+                if (nevents <= 0) {
+                    //FIXME:ai belit pula
+                }
+                while(spe_out_intr_mbox_status(event_received.spe) < 1);
+                spe_out_intr_mbox_read(event_received.spe, &response, 1,
+                        SPE_MBOX_ANY_NONBLOCKING);
+
+                index_candidate++;
+            }
+        }
+        /* Ask for results from each SPU */
+        ask_for_results(ctxs);
+
+        /* Get the result for the current piece from SPUs */
+        for (j = 0; j < SPU_THREADS; j++)
+            resp[j].index = -1;
+        for (j = 0; j < 2 * SPU_THREADS; j++)
+        {
+            printf("PPU intru sa primesc rezultat\n");
+            int data;
+            spe_event_wait(event_handler, &event_received, 1, -1);
+            while (spe_out_intr_mbox_status(event_received.spe) < 1);
+            spe_out_intr_mbox_read(event_received.spe, (&data), 1,
+                    SPE_MBOX_ANY_NONBLOCKING);
+            int SPU_id = event_received.data.u32;
+            resp[SPU_id].spu = SPU_id;
+            if (resp[SPU_id].index == -1)
+                resp[SPU_id].index = data;
+            else
+                resp[SPU_id].distance = data;
+            printf("PPU got final response from SPU %d, data %d\n",
+                    SPU_id, data);
+        }
+
+        /* Determine the best piece */
+        win = best_fit(resp, nr_piese, best_pieces);
+
+        /* Update the solved puzzle and check as SOLVED */
+        printf("PPU winning piece %d\n", win);
+        best_pieces[win] = SOLVED;
+        int piese_oriz = width / piesa_w;
+        int dest = i + piese_oriz + i / (piese_oriz - 1) + 1;
+        printf("PPU pun rezultat pt pozitia %d la %d\n", i, dest);
+        solved_puzzle[dest] = piese[win];
+        place_piece_on_puzzle(&final, piese[win], piesa_h, piesa_w,
+                width, height, dest);
+
+        left_piece = solved_puzzle[dest - 1];
+        top_piece = solved_puzzle[dest - piese_oriz];
+        nr_candidati--;
+        printf("\n\n\n___________PPU goes to next piece, choosing \
+                from %d candidates________\n", nr_candidati);
+        printf("PPU comparing to solved index: left %d, right %d\n",
+                dest - 1, dest - piese_oriz);
+    }
 
 
 

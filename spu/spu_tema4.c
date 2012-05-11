@@ -155,7 +155,7 @@ int main(unsigned long long speid, unsigned long long argp,
         printf("\tSPU %lld got margin from PPU\n", argp);
 
 
-        /* Get the number of candidates for the first line */
+        /* Get the number of candidates for the first column */
         while (spu_stat_in_mbox() <= 0);
         nr_candidati = spu_read_in_mbox();
         printf("\tSPU %lld voi primi %d candidati\n", argp, nr_candidati);
@@ -212,7 +212,117 @@ int main(unsigned long long speid, unsigned long long argp,
         for (i = 0; i < nr_candidati; i++)
             free(candidates[i]);
         free(candidates);
+        free(distances);
     }
+
+
+
+    /* ------Calculating pieces for the rest of the puzzle ------*/
+    while (spu_stat_in_mbox() <= 0);
+    piese_de_prelucrat = spu_read_in_mbox();
+    printf("\tSPU %lld got number of pieces for puzzle: %d\n",
+            argp, piese_de_prelucrat);
+    for (j = 0; j < piese_de_prelucrat; j++) {
+        /* Get the left margin from PPU */
+        while (spu_stat_in_mbox() <= 0);
+        pointer_margin = spu_read_in_mbox();
+        mfc_get((void *) vertical, (void *)pointer_margin, 
+                (uint32_t) piesa_h * sizeof(struct pixel), last_tag, 0, 0);
+        int response = (int)argp;
+        spu_write_out_intr_mbox(response);
+
+        /* Get the top margin from PPU */
+        while (spu_stat_in_mbox() <= 0);
+        pointer_margin = spu_read_in_mbox();
+        mfc_get((void *) horizontal, (void *)pointer_margin, 
+                (uint32_t) piesa_h * sizeof(struct pixel), last_tag, 0, 0);
+        response = (int)argp;
+        spu_write_out_intr_mbox(response);
+
+
+        /* Get the number of candidates for the rest of the puzzle */
+        while (spu_stat_in_mbox() <= 0);
+        nr_candidati = spu_read_in_mbox();
+        printf("\tSPU %lld voi primi %d candidati\n", argp, nr_candidati);
+
+
+        /* Get the horizontal and vertical candidates */
+        struct pixel **h_candidates = malloc_align(nr_candidati *
+                sizeof(struct pixel *), 4);
+        if (!h_candidates) {
+            perror("Error on allocating candidates");
+            return -1;
+        }
+        struct pixel **v_candidates = malloc_align(nr_candidati *
+                sizeof(struct pixel *), 4);
+        if (!v_candidates) {
+            perror("Error on allocating candidates");
+            return -1;
+        }
+        for (i = 0; i < nr_candidati; i++) {
+            h_candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
+            v_candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
+            if (!h_candidates[i] || !v_candidates[i]) {
+                perror("Error on allocating candidate");
+                free(h_candidates);
+                free(v_candidates);
+                return -1;
+            }
+            /* Get the pointer to the horizontal top margin */
+            while (spu_stat_in_mbox() <= 0);
+            pointer_margin = spu_read_in_mbox();
+            mfc_get((void *) h_candidates[i], (void *)pointer_margin, 
+                    (uint32_t) piesa_w * sizeof(struct pixel), last_tag, 0, 0);
+            int response = (int)argp;
+            spu_write_out_intr_mbox(response);
+
+            /* Get the pointer to the vertical left margin */
+            while (spu_stat_in_mbox() <= 0);
+            pointer_margin = spu_read_in_mbox();
+            mfc_get((void *) v_candidates[i], (void *)pointer_margin, 
+                    (uint32_t) piesa_h * sizeof(struct pixel), last_tag, 0, 0);
+            spu_write_out_intr_mbox(response);
+        }
+        printf("\tSPU %lld got all the candidates for the rest of the puzzle from PPU\n", argp);
+
+        /* Calculate the best candidate for this piece ___COLUMN */
+        int * h_distances = malloc_align(nr_candidati * sizeof(int), 4);
+        int * v_distances = malloc_align(nr_candidati * sizeof(int), 4);
+        int final_index, min_distance = MAX;
+        for (i = 0; i < nr_candidati; i++) {
+            h_distances[i] = calculate_manhattan(h_candidates[i],
+                    horizontal, piesa_w);
+            v_distances[i] = calculate_manhattan(v_candidates[i],
+                    vertical, piesa_h);
+            if (h_distances[i] + v_distances[i] < min_distance) {
+                min_distance = h_distances[i] + v_distances[i];
+                final_index = i;
+            }
+        }
+
+        /* Wait for PPU to ask for results */
+        int confirm;
+        while (spu_stat_in_mbox() <= 0);
+        confirm = spu_read_in_mbox();
+
+        /* Send the results back to PPU */
+        spu_write_out_intr_mbox(final_index);
+        spu_write_out_intr_mbox(min_distance);
+
+        /* Free memory for candidates */
+        for (i = 0; i < nr_candidati; i++) {
+            free(h_candidates[i]);
+            free(v_candidates[i]);
+        }
+        free(h_candidates);
+        free(v_candidates);
+        free(h_distances);
+        free(v_distances);
+    }
+    printf("\tSPU %lld a primit toate piesele si iese\n", argp);
+
+
+
 
 
 	return 0;
