@@ -677,8 +677,12 @@ int main(int argc, char **argv)
         place_piece_on_puzzle(&final, piese[win], piesa_h, piesa_w,
                 width, height, dest);
 
-        left_piece = solved_puzzle[dest - 1];
-        top_piece = solved_puzzle[dest - piese_oriz];
+        left_piece = solved_puzzle[dest];
+        top_piece = solved_puzzle[dest + 1 - piese_oriz];
+        if ((dest + 1) % piese_oriz == 0) {
+            left_piece = solved_puzzle[dest + 1];
+            top_piece = solved_puzzle[dest + 2 - piese_oriz];
+        }
         nr_candidati--;
         printf("\n\n\n___________PPU goes to next piece, choosing \
                 from %d candidates________\n", nr_candidati);
