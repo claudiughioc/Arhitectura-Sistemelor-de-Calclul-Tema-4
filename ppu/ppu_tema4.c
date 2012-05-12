@@ -26,9 +26,10 @@ typedef struct {
 } thread_arg_t;
 
 struct pixel {
-	char red;
-	char green;
-	char blue;
+	int red;
+	int green;
+	int blue;
+    int aux;
 };
 
 struct spu_response {
@@ -280,7 +281,6 @@ int main(int argc, char **argv)
 
     printf("PPU am creat piesele\n");
 
-
 	/* Create several SPE-threads to execute 'SPU'. */
 	for (i = 0; i < SPU_THREADS; i++) {
 		/* Create context */
@@ -338,7 +338,7 @@ int main(int argc, char **argv)
 
     /* Determine best pieces for the first line */
     printf("PPU extracts vertical extremities to send to SPU\n");
-    nr_candidati = 31;
+    nr_candidati = nr_piese - 1;
     for (i = 0; i < piese_de_prelucrat; i++) {
         latura_test = get_vertical_side(curr_piece, piesa_h, piesa_w, LAST);
         index_candidate = 0;
@@ -350,6 +350,17 @@ int main(int argc, char **argv)
             spe_in_mbox_write(ctxs[j], (void *) &pointer_margin,
                     1, SPE_MBOX_ANY_NONBLOCKING);
 
+
+            /* Wait for confirmation from SPUs */
+            nevents = spe_event_wait(event_handler, &event_received, 1, -1);
+            if (nevents <= 0) {
+                //FIXME:ai belit pula
+            }
+            int response;
+            while(spe_out_intr_mbox_status(event_received.spe) < 1);
+            spe_out_intr_mbox_read(event_received.spe, &response, 1,
+                    SPE_MBOX_ANY_NONBLOCKING);
+
             /* Calculate how many pieces will be sent to each SPU */
             spu_qty = (nr_candidati - (nr_candidati % (SPU_THREADS - 1)))
                     / (SPU_THREADS - 1);
@@ -358,7 +369,8 @@ int main(int argc, char **argv)
             printf("PPU QUANTITY: %d\n", spu_qty);
             spe_in_mbox_write(ctxs[j], (void *) &spu_qty, 1,
                     SPE_MBOX_ANY_NONBLOCKING);
-
+            printf("PPU sent %d to %d\n", spu_qty, j);
+            printf("mama\n");
             /* Send the appropriate candidates to SPU to check */
             for (k = 0; k < spu_qty; k++) {
                 if (best_pieces[index_candidate] == SOLVED) {
@@ -371,10 +383,18 @@ int main(int argc, char **argv)
                 best_pieces[index_candidate] = -1 * j;
                 latura_candidat = get_vertical_side(candidate, piesa_h,
                         piesa_w, FIRST);
+                if (j == 0 && index_candidate == 1) {
+                    int t;
+                    for (t = 0; t < piesa_h; t++) {
+                        printf(">>>>>>PPU candidat 1 [%d]: %d %d %d\n",
+                            t, latura_candidat[t].red, latura_candidat[t].green,
+                            latura_candidat[t].blue);
+                    }
+                }
                 pointer_margin = latura_candidat;
                 spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
                         1, SPE_MBOX_ANY_NONBLOCKING);                
-
+                
                 /* Wait for confirmation from SPUs */
                 nevents = spe_event_wait(event_handler, &event_received, 1, -1);
                 if (nevents <= 0) {
@@ -384,6 +404,7 @@ int main(int argc, char **argv)
                 while(spe_out_intr_mbox_status(event_received.spe) < 1);
                 spe_out_intr_mbox_read(event_received.spe, &response, 1,
                         SPE_MBOX_ANY_NONBLOCKING);
+                printf("PPU got confimation from SPU\n");
 
                 index_candidate++;
             }
@@ -470,7 +491,6 @@ int main(int argc, char **argv)
                     index_candidate++;
                     continue;
                 }
-                printf("PPU will send to %d, piece %d\n", j, index_candidate);
                 candidate = piese[index_candidate];
                 best_pieces[index_candidate] = -1 * j;
                 latura_candidat = get_horizontal_side(candidate, piesa_h,
@@ -478,7 +498,6 @@ int main(int argc, char **argv)
                 pointer_margin = latura_candidat;
                 spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
                         1, SPE_MBOX_ANY_NONBLOCKING);                
-
 
                 /* Wait for confirmation from SPUs */
                 nevents = spe_event_wait(event_handler, &event_received, 1, -1);
