@@ -7,6 +7,7 @@
 
 #define MAX         65000
 #define waitag(t) mfc_write_tag_mask(1<<t); mfc_read_tag_status_all();
+#define KILL_SPU    0x13
 
 
 
@@ -45,9 +46,9 @@ static struct pixel * copy_from_bus(struct dma_pixel *bus, struct pixel *a, int 
     int i, aux;
     char c;
     for (i = 0; i < piesa_h; i++) {
-        a[i].red = bus[i].red;
-        a[i].green = bus[i].green;
-        a[i].blue = bus[i].blue;
+        a[i].red = (unsigned char)bus[i].red;
+        a[i].green = (unsigned char)bus[i].green;
+        a[i].blue = (unsigned char)bus[i].blue;
     }
     //printf("\t\t\t\t\tCOPY FROM BUS: bus %d, res: %d\n",
     //        bus[0].red, a[0].red);
@@ -64,6 +65,8 @@ int main(unsigned long long speid, unsigned long long argp,
     struct pixel *horizontal, *vertical;
     struct dma_pixel *bus;
     uint32_t last_tag;
+    int *distances, *h_distances, *v_distances;
+    struct pixel **candidates, **h_candidates, **v_candidates;
 
     /* Wait for initial parameters from PPU */
     while (spu_stat_in_mbox() <= 0);
@@ -97,6 +100,13 @@ int main(unsigned long long speid, unsigned long long argp,
         mfc_get((void *) bus, (void *)pointer_margin, (uint32_t) piesa_h *
                 sizeof(struct dma_pixel), tag_id, 0, 0);
         vertical = copy_from_bus(bus, vertical, piesa_h);
+        if (j == 5 && argp == 7) {
+            int t = 0;
+            for (t = 0; t < piesa_h; t++) {
+            printf("\t\t\t\t-------->SPU 7: vertical[%d]: %d %d %d\n",
+                    t, vertical[t].red, vertical[t].green, vertical[t].blue);
+            }
+        }
         printf("\tSPU %lld got margin from PPU\n", argp);
 
 
@@ -110,51 +120,62 @@ int main(unsigned long long speid, unsigned long long argp,
         nr_candidati = spu_read_in_mbox();
         printf("\tSPU %lld voi primi %d candidati\n", argp, nr_candidati);
 
-
-
-        /* Get the candidates from PPU */
-        struct pixel **candidates = malloc_align(nr_candidati *
-                sizeof(struct pixel *), 4);
-        if (!candidates) {
-            perror("Error on allocating candidates");
-            return -1;
-        }
-        for (i = 0; i < nr_candidati; i++) {
-            candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
-            if (!candidates[i]) {
-                perror("Error on allocating candidate, first line");
-                free(candidates);
+        if (j == 0) {
+            /* Allocate memory for the candidates to use for the first line */
+            candidates = malloc_align(nr_candidati *
+                    sizeof(struct pixel *), 4);
+            if (!candidates) {
+                perror("Error on allocating candidates");
                 return -1;
             }
+            for (i = 0; i < nr_candidati; i++) {
+                candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
+                if (!candidates[i]) {
+                    perror("Error on allocating candidate, first line");
+                    free(candidates);
+                    return -1;
+                }
+            }
+            printf("\tSPU %lld allocated line candidate 0 at %d\n",
+                    argp, candidates[0]);
+            distances = malloc_align(nr_candidati * sizeof(int), 4);
+        }
 
+
+        for (i = 0; i < nr_candidati; i++) {
             while (spu_stat_in_mbox() <= 0);
             pointer_margin = spu_read_in_mbox();
             mfc_get((void *) bus, (void *)pointer_margin, 
                     (uint32_t) piesa_h * sizeof(struct dma_pixel), tag_id, 0, 0);
             candidates[i] = copy_from_bus(bus, candidates[i], piesa_h);
-            if (i == 0 && argp == 0) {
-                int t;
+            if (argp == 7 && i == 3) {
+                int t = 0;
                 for (t = 0; t < piesa_h; t++) {
-                    printf("\t <<<<<SPU candidat primit:[%d] %d %d %d\n",
-                            t, candidates[i][t].red, candidates[i][t].green,
+                    printf("\t\t\t>>>BUS[%d]: %d %d %d\n", t, bus[t].red,
+                            bus[t].green, bus[t].blue);
+                    printf("\t\t\t>>>Cand[%d]: %d %d %d\n", t, 
+                            candidates[i][t].red, candidates[i][t].green,
                             candidates[i][t].blue);
-                    printf("\t <<<<<BUS:[%d] %d %d %d\n",
-                            t, bus[t].red, bus[t].green,
-                            bus[t].blue);
                 }
             }
             int response = (int)argp;
             spu_write_out_intr_mbox(response);
         }
-        printf("\tSPU %lld got all the candidates for the first line from PPU\n", argp);
 
 
         /* Calculate the best candidate for this piece */
-        int * distances = malloc_align(nr_candidati * sizeof(int), 4);
         int final_index, min_distance = MAX;
         for (i = 0; i < nr_candidati; i++) {
+            if (argp == 7 && i == 3 && j == 5)
+                printf("\t\t\t\t--------->>>0: %d %d %d \n",
+                        candidates[i][0].red, candidates[i][0].green,
+                        candidates[i][0].blue);
             distances[i] = calculate_manhattan(candidates[i],
                     vertical, piesa_h);
+            if (argp == 7) {
+                printf("\t SPU 7 candidat %d, distanta minima %d\n",
+                        i, distances[i]);
+            }
             if (distances[i] < min_distance) {
                 min_distance = distances[i];
                 final_index = i;
@@ -173,10 +194,13 @@ int main(unsigned long long speid, unsigned long long argp,
         spu_write_out_intr_mbox(min_distance);
 
         /* Free memory for candidates */
-        for (i = 0; i < nr_candidati; i++)
-            free(candidates[i]);
-        free(candidates);
-        free(distances);
+        if (j == piese_de_prelucrat - 1) {
+            for (i = 0; i < nr_candidati; i++)
+                free(candidates[i]);
+            free(candidates);
+            free(distances);
+            printf("\tSPU %lld freed memory line\n", argp);
+        }
     }
 
 
@@ -203,21 +227,27 @@ int main(unsigned long long speid, unsigned long long argp,
         nr_candidati = spu_read_in_mbox();
         printf("\tSPU %lld voi primi %d candidati\n", argp, nr_candidati);
 
-        /* Get the candidates from PPU */
-        struct pixel **candidates = malloc_align(nr_candidati *
-                sizeof(struct pixel *), 4);
-        if (!candidates) {
-            perror("Error on allocating candidates");
-            return -1;
-        }
-        for (i = 0; i < nr_candidati; i++) {
-            candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
-            if (!candidates[i]) {
-                perror("Error on allocating candidate, first column");
-                free(candidates);
+        if (j == 0) {
+            /* Allocate memory for the candidates to use for the first line */
+            candidates = malloc_align(nr_candidati *
+                    sizeof(struct pixel *), 4);
+            if (!candidates) {
+                perror("Error on allocating candidates");
                 return -1;
             }
-
+            for (i = 0; i < nr_candidati; i++) {
+                candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
+                if (!candidates[i]) {
+                    perror("Error on allocating candidate, first line");
+                    free(candidates);
+                    return -1;
+                }
+            }
+            printf("\tSPU %lld allocated column candidate 0 at %d\n",
+                    argp, candidates[0]);
+            distances = malloc_align(nr_candidati * sizeof(int), 4);
+        }
+        for (i = 0; i < nr_candidati; i++) {
             while (spu_stat_in_mbox() <= 0);
             pointer_margin = spu_read_in_mbox();
 
@@ -228,10 +258,10 @@ int main(unsigned long long speid, unsigned long long argp,
             int response = (int)argp;
             spu_write_out_intr_mbox(response);
         }
-        printf("\tSPU %lld got all the candidates for the first line from PPU\n", argp);
+        printf("\tSPU %lld got all the candidates for the first column, cand 0: %d\n",
+                argp, candidates[0]);
 
         /* Calculate the best candidate for this piece ___COLUMN */
-        int * distances = malloc_align(nr_candidati * sizeof(int), 4);
         int final_index, min_distance = MAX;
         for (i = 0; i < nr_candidati; i++) {
             distances[i] = calculate_manhattan(candidates[i],
@@ -253,10 +283,13 @@ int main(unsigned long long speid, unsigned long long argp,
         spu_write_out_intr_mbox(min_distance);
 
         /* Free memory for candidates */
-        for (i = 0; i < nr_candidati; i++)
-            free(candidates[i]);
-        free(candidates);
-        free(distances);
+        if (j == piese_de_prelucrat - 1) {
+            for (i = 0; i < nr_candidati; i++)
+                free(candidates[i]);
+            free(candidates);
+            free(distances);
+            printf("\tSPU %lld freed memory column\n", argp);
+        }
     }
 
 
@@ -292,29 +325,37 @@ int main(unsigned long long speid, unsigned long long argp,
         printf("\tSPU %lld voi primi %d candidati\n", argp, nr_candidati);
 
 
-        /* Get the horizontal and vertical candidates */
-        struct pixel **h_candidates = malloc_align(nr_candidati *
-                sizeof(struct pixel *), 4);
-        if (!h_candidates) {
-            perror("Error on allocating candidates");
-            return -1;
-        }
-        struct pixel **v_candidates = malloc_align(nr_candidati *
-                sizeof(struct pixel *), 4);
-        if (!v_candidates) {
-            perror("Error on allocating candidates, rest of puzzle");
-            return -1;
-        }
-        for (i = 0; i < nr_candidati; i++) {
-            h_candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
-            v_candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
-            if (!h_candidates[i] || !v_candidates[i]) {
-                printf("\tSPU %lld nu poate aloca candidati\n", argp);
-                perror("Error on allocating candidate");
-                free(h_candidates);
-                free(v_candidates);
+        if (j == 0) {
+            /* Get the horizontal and vertical candidates */
+            h_candidates = malloc_align(nr_candidati *
+                    sizeof(struct pixel *), 4);
+            if (!h_candidates) {
+                perror("Error on allocating candidates");
                 return -1;
             }
+            v_candidates = malloc_align(nr_candidati *
+                    sizeof(struct pixel *), 4);
+            if (!v_candidates) {
+                perror("Error on allocating candidates, rest of puzzle");
+                return -1;
+            }
+            for (i = 0; i < nr_candidati; i++) {
+                h_candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
+                v_candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
+                if (!h_candidates[i] || !v_candidates[i]) {
+                    printf("\tSPU %lld nu poate aloca candidati\n", argp);
+                    perror("Error on allocating candidate");
+                    free(h_candidates);
+                    free(v_candidates);
+                    return -1;
+                }
+            }
+            printf("\tSPU %lld allocated rest: h at %d, v at %d\n",
+                    argp, h_candidates[0], v_candidates[0]);
+            h_distances = malloc_align(nr_candidati * sizeof(int), 4);
+            v_distances = malloc_align(nr_candidati * sizeof(int), 4);
+        }
+        for (i = 0; i < nr_candidati; i++) {
             /* Get the pointer to the horizontal top margin */
             while (spu_stat_in_mbox() <= 0);
             pointer_margin = spu_read_in_mbox();
@@ -335,8 +376,6 @@ int main(unsigned long long speid, unsigned long long argp,
         printf("\tSPU %lld got all the candidates for the rest of the puzzle from PPU\n", argp);
 
         /* Calculate the best candidate for this piece ___COLUMN */
-        int * h_distances = malloc_align(nr_candidati * sizeof(int), 4);
-        int * v_distances = malloc_align(nr_candidati * sizeof(int), 4);
         int final_index, min_distance = MAX;
         for (i = 0; i < nr_candidati; i++) {
             h_distances[i] = calculate_manhattan(h_candidates[i],
@@ -359,22 +398,30 @@ int main(unsigned long long speid, unsigned long long argp,
         spu_write_out_intr_mbox(min_distance);
 
         /* Free memory for candidates */
-        for (i = 0; i < nr_candidati; i++) {
-            free(h_candidates[i]);
-            free(v_candidates[i]);
+        if (j == piese_de_prelucrat - 1) {
+            for (i = 0; i < nr_candidati; i++)
+                free(h_candidates[i]);
+            for (i = 0; i < nr_candidati; i++)
+                free(v_candidates[i]);
+            free(h_candidates);
+            free(v_candidates);
+            free(h_distances);
+            free(v_distances);
+            printf("\tSPU %lld freed memory puzzle\n", argp);
         }
-        free(h_candidates);
-        free(v_candidates);
-        free(h_distances);
-        free(v_distances);
-        printf("\tSPU %lld sleeping for 5 sec\n", argp);
-        sleep(5);
     }
     printf("\tSPU %lld a primit toate piesele si iese\n", argp);
 
 
+    /* Wait for kill signal from PPU */
+    int kill;
+    while (spu_stat_in_mbox() <= 0);
+    kill = spu_read_in_mbox();
+    if (kill == KILL_SPU)
+        printf("SPU %lld returned successfuly\n", argp);
 
 
 
-	return 0;
+
+	return 1;
 }

@@ -11,6 +11,7 @@
 #define LAST            0x01
 #define FIRST           0x02
 #define SOLVED          (-10)
+#define KILL_SPU        0x13
 #define MAX             65000
 #define spu_mfc_ceil128(value)  ((value + 127) & ~127)
 #define spu_mfc_ceil16(value)   ((value +  15) &  ~15)
@@ -341,6 +342,14 @@ int main(int argc, char **argv)
     nr_candidati = nr_piese - 1;
     for (i = 0; i < piese_de_prelucrat; i++) {
         latura_test = get_vertical_side(curr_piece, piesa_h, piesa_w, LAST);
+        if (i == 5) {
+            int t = 0;
+            for (t = 0; t < piesa_h; t++) {
+                printf(">>>>>PPU vertical[%d]: %d %d %d\n",
+                        t, latura_test[t].red, latura_test[t].green,
+                        latura_test[t].blue);
+            }
+        }
         index_candidate = 0;
         for (j = 0; j < SPU_THREADS; j++) {
             /* Send the margin of the current piece to each SPU */
@@ -383,14 +392,15 @@ int main(int argc, char **argv)
                 best_pieces[index_candidate] = -1 * j;
                 latura_candidat = get_vertical_side(candidate, piesa_h,
                         piesa_w, FIRST);
-                if (j == 0 && index_candidate == 1) {
+                if (j == 7 && index_candidate == 30) {
                     int t;
                     for (t = 0; t < piesa_h; t++) {
-                        printf(">>>>>>PPU candidat 1 [%d]: %d %d %d\n",
-                            t, latura_candidat[t].red, latura_candidat[t].green,
-                            latura_candidat[t].blue);
+                        printf("\t\tPPU >>>> candidat[%d]: %d %d %d\n",
+                                t, latura_candidat[t].red, latura_candidat[t].green,
+                                latura_candidat[t].blue);
                     }
                 }
+
                 pointer_margin = latura_candidat;
                 spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
                         1, SPE_MBOX_ANY_NONBLOCKING);                
@@ -712,8 +722,6 @@ int main(int argc, char **argv)
 
 
 
-
-
 	/* Print the final image to an output file */
 	printf("PPU writing the final image to output file\n");
 	FILE *fout = fopen(output_file, "w");
@@ -724,7 +732,16 @@ int main(int argc, char **argv)
 				final[i].green, final[i].blue);
 	}
 	close(fout);
+    printf("PPU output file has been written\n");
 
+
+    /* Send termination message to SPU */
+    printf("PPU sending kill messages to SPUs\n");
+    for (i = 0; i < SPU_THREADS; i++) {
+        int kill = KILL_SPU;
+        spe_in_mbox_write(ctxs[i], (void *) &kill, 
+                1, SPE_MBOX_ANY_NONBLOCKING);                
+    }
 
 	/* Wait for SPU-thread to complete execution. */
 	for (i = 0; i < SPU_THREADS; i++) {
