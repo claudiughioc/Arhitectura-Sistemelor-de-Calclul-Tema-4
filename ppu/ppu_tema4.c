@@ -342,19 +342,9 @@ int main(int argc, char **argv)
     nr_candidati = nr_piese - 1;
     for (i = 0; i < piese_de_prelucrat; i++) {
         latura_test = get_vertical_side(curr_piece, piesa_h, piesa_w, LAST);
-        if (i == 5) {
-            int t = 0;
-            for (t = 0; t < piesa_h; t++) {
-                printf(">>>>>PPU vertical[%d]: %d %d %d\n",
-                        t, latura_test[t].red, latura_test[t].green,
-                        latura_test[t].blue);
-            }
-        }
         index_candidate = 0;
         for (j = 0; j < SPU_THREADS; j++) {
             /* Send the margin of the current piece to each SPU */
-            printf("PPU will send pointer to vertical margin to %d,\
-                    pointer %d\n", j, latura_test);
             int pointer_margin = latura_test;
             spe_in_mbox_write(ctxs[j], (void *) &pointer_margin,
                     1, SPE_MBOX_ANY_NONBLOCKING);
@@ -374,11 +364,8 @@ int main(int argc, char **argv)
                     / (SPU_THREADS - 1);
             if (j == SPU_THREADS - 1)
                 spu_qty = nr_candidati % (SPU_THREADS - 1);
-            printf("PPU QUANTITY: %d\n", spu_qty);
             spe_in_mbox_write(ctxs[j], (void *) &spu_qty, 1,
                     SPE_MBOX_ANY_NONBLOCKING);
-            printf("PPU sent %d to %d\n", spu_qty, j);
-            printf("mama\n");
             /* Send the appropriate candidates to SPU to check */
             for (k = 0; k < spu_qty; k++) {
                 if (best_pieces[index_candidate] == SOLVED) {
@@ -391,14 +378,6 @@ int main(int argc, char **argv)
                 best_pieces[index_candidate] = -1 * j;
                 latura_candidat = get_vertical_side(candidate, piesa_h,
                         piesa_w, FIRST);
-                if (j == 7 && index_candidate == 30) {
-                    int t;
-                    for (t = 0; t < piesa_h; t++) {
-                        printf("\t\tPPU >>>> candidat[%d]: %d %d %d\n",
-                                t, latura_candidat[t].red, latura_candidat[t].green,
-                                latura_candidat[t].blue);
-                    }
-                }
 
                 pointer_margin = latura_candidat;
                 spe_in_mbox_write(ctxs[j], (void *) &pointer_margin, 
@@ -412,7 +391,6 @@ int main(int argc, char **argv)
                 while(spe_out_intr_mbox_status(event_received.spe) < 1);
                 spe_out_intr_mbox_read(event_received.spe, &response, 1,
                         SPE_MBOX_ANY_NONBLOCKING);
-                printf("PPU got confimation from SPU\n");
 
                 index_candidate++;
             }
@@ -426,7 +404,6 @@ int main(int argc, char **argv)
             resp[j].index = -1;
         for (j = 0; j < 2 * SPU_THREADS; j++)
         {
-            printf("PPU intru sa primesc rezultat\n");
             int data;
             spe_event_wait(event_handler, &event_received, 1, -1);
             while (spe_out_intr_mbox_status(event_received.spe) < 1);
@@ -477,8 +454,6 @@ int main(int argc, char **argv)
         index_candidate = 0;
         for (j = 0; j < SPU_THREADS; j++) {
             /* Send the margin of the current piece to each SPU */
-            printf("PPU will send pointer to horizontal margin to %d,\
-                    pointer %d\n", j, latura_test);
             int pointer_margin = latura_test;
             spe_in_mbox_write(ctxs[j], (void *) &pointer_margin,
                     1, SPE_MBOX_ANY_NONBLOCKING);
@@ -488,7 +463,6 @@ int main(int argc, char **argv)
                     / (SPU_THREADS - 1);
             if (j == SPU_THREADS - 1)
                 spu_qty = nr_candidati % (SPU_THREADS - 1);
-            printf("PPU QUANTITY: %d\n", spu_qty);
             spe_in_mbox_write(ctxs[j], (void *) &spu_qty, 1,
                     SPE_MBOX_ANY_NONBLOCKING);
 
@@ -611,7 +585,6 @@ int main(int argc, char **argv)
                     / (SPU_THREADS - 1);
             if (j == SPU_THREADS - 1)
                 spu_qty = nr_candidati % (SPU_THREADS - 1);
-            printf("PPU QUANTITY: %d\n", spu_qty);
             spe_in_mbox_write(ctxs[j], (void *) &spu_qty, 1,
                     SPE_MBOX_ANY_NONBLOCKING);
 

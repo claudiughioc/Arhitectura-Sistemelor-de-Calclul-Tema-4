@@ -50,8 +50,6 @@ static void copy_from_bus(struct dma_pixel *bus, struct pixel **a, int piesa_h)
         (*a)[i].green = (unsigned char)bus[i].green;
         (*a)[i].blue = (unsigned char)bus[i].blue;
     }
-    //printf("\t\t\t\t\tCOPY FROM BUS: bus %d, res: %d\n",
-    //        bus[0].red, a[0].red);
 }
 
 int main(unsigned long long speid, unsigned long long argp,
@@ -94,18 +92,9 @@ int main(unsigned long long speid, unsigned long long argp,
         /* Get the first margin from PPU */
         while (spu_stat_in_mbox() <= 0);
         pointer_margin = spu_read_in_mbox();
-        printf("\tSPU %lld marimea transferului DMA este %d\n", argp,
-                piesa_h * sizeof(struct pixel));
         mfc_get((void *) bus, (void *)pointer_margin, (uint32_t) piesa_h *
                 sizeof(struct dma_pixel), tag_id, 0, 0);
         copy_from_bus(bus, &vertical, piesa_h);
-        if (j == 5 && argp == 7) {
-            int t = 0;
-            for (t = 0; t < piesa_h; t++) {
-            printf("\t\t\t\t-------->SPU 7: vertical[%d]: %d %d %d\n",
-                    t, vertical[t].red, vertical[t].green, vertical[t].blue);
-            }
-        }
         printf("\tSPU %lld got margin from PPU\n", argp);
 
 
@@ -157,10 +146,6 @@ int main(unsigned long long speid, unsigned long long argp,
         for (i = 0; i < nr_candidati; i++) {
             distances[i] = calculate_manhattan(candidates[i],
                     vertical, piesa_h);
-            if (argp == 7) {
-                printf("\t SPU 7 candidat %d, distanta minima %d\n",
-                        i, distances[i]);
-            }
             if (distances[i] < min_distance) {
                 min_distance = distances[i];
                 final_index = i;
@@ -196,7 +181,6 @@ int main(unsigned long long speid, unsigned long long argp,
     piese_de_prelucrat = spu_read_in_mbox();
     printf("\tSPU %lld got number of pieces for column: %d\n",
             argp, piese_de_prelucrat);
-    printf("\tSPU %lld last tag: %d\n", argp, last_tag);
     for (j = 0; j < piese_de_prelucrat; j++) {
         /* Get the first margin from PPU */
         while (spu_stat_in_mbox() <= 0);
@@ -291,13 +275,6 @@ int main(unsigned long long speid, unsigned long long argp,
         mfc_get((void *) bus, (void *)pointer_margin, 
                 (uint32_t) piesa_h * sizeof(struct dma_pixel), last_tag, 0, 0);
         copy_from_bus(bus, &vertical, piesa_h);
-        if (j == 15 && argp == 7) {
-            int t = 0;
-            for (t = 0; t < piesa_h; t++) {
-            printf("\t\t\t\t-------->SPU 7: vertical[%d]: %d %d %d\n",
-                    t, vertical[t].red, vertical[t].green, vertical[t].blue);
-            }
-        }
         int response = (int)argp;
         spu_write_out_intr_mbox(response);
 
@@ -307,13 +284,6 @@ int main(unsigned long long speid, unsigned long long argp,
         mfc_get((void *) bus, (void *)pointer_margin, 
                 (uint32_t) piesa_h * sizeof(struct dma_pixel), last_tag, 0, 0);
         copy_from_bus(bus, &horizontal, piesa_h);
-        if (j == 15 && argp == 7) {
-            int t = 0;
-            for (t = 0; t < piesa_h; t++) {
-            printf("\t\t\t\t-------->SPU 7: horizontal[%d]: %d %d %d\n",
-                    t, vertical[t].red, vertical[t].green, vertical[t].blue);
-            }
-        }
         response = (int)argp;
         spu_write_out_intr_mbox(response);
 
@@ -369,29 +339,11 @@ int main(unsigned long long speid, unsigned long long argp,
             pointer_margin = spu_read_in_mbox();
             mfc_get((void *) bus, (void *)pointer_margin, 
                     (uint32_t) piesa_h * sizeof(struct dma_pixel), last_tag, 0, 0);
-            if (i == 5 && argp == 7 && j == 15) {
-                int t = 0;
-                for (t = 0; t < piesa_h; t++) {
-                    printf("\t\t\t\tSPU bus[%d] v = %d %d %d\n",
-                            t, bus[t].red, bus[t].green, bus[t].blue);
-                }
-            }
             copy_from_bus(bus, &v_candidates[i], piesa_h);
             spu_write_out_intr_mbox(response);
         }
         printf("\tSPU %lld got all the candidates for the rest of the puzzle from PPU\n", argp);
 
-        if (argp == 7 && j == 15) {
-            int t = 0;
-            for (t = 0; t < piesa_h; t++) {
-                printf("\t\t\t\tSPU after[%d] h = %d %d %d\n",
-                        t, h_candidates[5][t].red, h_candidates[5][t].green,
-                        h_candidates[5][t].blue);
-                printf("\t\t\t\tSPU after[%d] v = %d %d %d\n",
-                        t, v_candidates[5][t].red, v_candidates[5][t].green,
-                        v_candidates[5][t].blue);
-            }
-        }
         /* Calculate the best candidate for this piece ___COLUMN */
         int final_index, min_distance = MAX;
         for (i = 0; i < nr_candidati; i++) {
@@ -399,10 +351,6 @@ int main(unsigned long long speid, unsigned long long argp,
                     horizontal, piesa_w);
             v_distances[i] = calculate_manhattan(v_candidates[i],
                     vertical, piesa_h);
-            if (argp == 7) {
-                printf("\t\t\t\t---=== SPU 7 gaseste distanta %d, cand %d\n",
-                        h_distances[i] + v_distances[i], i);
-            }
             if (h_distances[i] + v_distances[i] < min_distance) {
                 min_distance = h_distances[i] + v_distances[i];
                 final_index = i;
