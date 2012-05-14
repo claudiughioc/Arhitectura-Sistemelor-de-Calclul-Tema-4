@@ -363,7 +363,6 @@ int main(int argc, char **argv)
             /* Wait for confirmation from SPUs */
             nevents = spe_event_wait(event_handler, &event_received, 1, -1);
             if (nevents <= 0) {
-                //FIXME:ai belit pula
             }
             int response;
             while(spe_out_intr_mbox_status(event_received.spe) < 1);
@@ -408,7 +407,6 @@ int main(int argc, char **argv)
                 /* Wait for confirmation from SPUs */
                 nevents = spe_event_wait(event_handler, &event_received, 1, -1);
                 if (nevents <= 0) {
-                    //FIXME:ai belit pula
                 }
                 int response;
                 while(spe_out_intr_mbox_status(event_received.spe) < 1);
@@ -512,7 +510,6 @@ int main(int argc, char **argv)
                 /* Wait for confirmation from SPUs */
                 nevents = spe_event_wait(event_handler, &event_received, 1, -1);
                 if (nevents <= 0) {
-                    //FIXME:ai belit pula
                 }
                 int response;
                 while(spe_out_intr_mbox_status(event_received.spe) < 1);
@@ -590,7 +587,6 @@ int main(int argc, char **argv)
             /* Wait for confirmation from SPUs */
             nevents = spe_event_wait(event_handler, &event_received, 1, -1);
             if (nevents <= 0) {
-                //FIXME:ai belit pula
             }
             int response;
             while(spe_out_intr_mbox_status(event_received.spe) < 1);
@@ -605,7 +601,6 @@ int main(int argc, char **argv)
             /* Wait for confirmation from SPUs */
             nevents = spe_event_wait(event_handler, &event_received, 1, -1);
             if (nevents <= 0) {
-                //FIXME:ai belit pula
             }
             while(spe_out_intr_mbox_status(event_received.spe) < 1);
             spe_out_intr_mbox_read(event_received.spe, &response, 1,
@@ -642,7 +637,6 @@ int main(int argc, char **argv)
                 /* Wait for confirmation from SPUs */
                 nevents = spe_event_wait(event_handler, &event_received, 1, -1);
                 if (nevents <= 0) {
-                    //FIXME:ai belit pula
                 }
                 int response;
                 while(spe_out_intr_mbox_status(event_received.spe) < 1);
@@ -660,7 +654,6 @@ int main(int argc, char **argv)
                 /* Wait for confirmation from SPUs */
                 nevents = spe_event_wait(event_handler, &event_received, 1, -1);
                 if (nevents <= 0) {
-                    //FIXME:ai belit pula
                 }
                 while(spe_out_intr_mbox_status(event_received.spe) < 1);
                 spe_out_intr_mbox_read(event_received.spe, &response, 1,

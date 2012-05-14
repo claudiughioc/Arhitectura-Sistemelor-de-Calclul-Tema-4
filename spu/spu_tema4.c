@@ -12,9 +12,9 @@
 
 
 struct pixel {
-    char red;
-    char green;
-    char blue;
+    unsigned char red;
+    unsigned char green;
+    unsigned char blue;
 };
 unsigned long long spu_id;
 
@@ -39,20 +39,19 @@ static int calculate_manhattan(struct pixel *cand, struct pixel *vertical,
     return distance;
 }
 
-static struct pixel * copy_from_bus(struct dma_pixel *bus, struct pixel *a, int piesa_h)
+static void copy_from_bus(struct dma_pixel *bus, struct pixel **a, int piesa_h)
 {
     printf("\t\t\t\tInitial in vector, pos 0 era %d\n",
-           a[0].red);
+           (*a)[0].red);
     int i, aux;
     char c;
     for (i = 0; i < piesa_h; i++) {
-        a[i].red = (unsigned char)bus[i].red;
-        a[i].green = (unsigned char)bus[i].green;
-        a[i].blue = (unsigned char)bus[i].blue;
+        (*a)[i].red = (unsigned char)bus[i].red;
+        (*a)[i].green = (unsigned char)bus[i].green;
+        (*a)[i].blue = (unsigned char)bus[i].blue;
     }
     //printf("\t\t\t\t\tCOPY FROM BUS: bus %d, res: %d\n",
     //        bus[0].red, a[0].red);
-    return a;
 }
 
 int main(unsigned long long speid, unsigned long long argp,
@@ -99,7 +98,7 @@ int main(unsigned long long speid, unsigned long long argp,
                 piesa_h * sizeof(struct pixel));
         mfc_get((void *) bus, (void *)pointer_margin, (uint32_t) piesa_h *
                 sizeof(struct dma_pixel), tag_id, 0, 0);
-        vertical = copy_from_bus(bus, vertical, piesa_h);
+        copy_from_bus(bus, &vertical, piesa_h);
         if (j == 5 && argp == 7) {
             int t = 0;
             for (t = 0; t < piesa_h; t++) {
@@ -122,13 +121,13 @@ int main(unsigned long long speid, unsigned long long argp,
 
         if (j == 0) {
             /* Allocate memory for the candidates to use for the first line */
-            candidates = malloc_align(nr_candidati *
+            candidates = malloc_align((nr_candidati + 1) *
                     sizeof(struct pixel *), 4);
             if (!candidates) {
                 perror("Error on allocating candidates");
                 return -1;
             }
-            for (i = 0; i < nr_candidati; i++) {
+            for (i = 0; i < nr_candidati + 1; i++) {
                 candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
                 if (!candidates[i]) {
                     perror("Error on allocating candidate, first line");
@@ -147,29 +146,15 @@ int main(unsigned long long speid, unsigned long long argp,
             pointer_margin = spu_read_in_mbox();
             mfc_get((void *) bus, (void *)pointer_margin, 
                     (uint32_t) piesa_h * sizeof(struct dma_pixel), tag_id, 0, 0);
-            candidates[i] = copy_from_bus(bus, candidates[i], piesa_h);
-            if (argp == 7 && i == 3) {
-                int t = 0;
-                for (t = 0; t < piesa_h; t++) {
-                    printf("\t\t\t>>>BUS[%d]: %d %d %d\n", t, bus[t].red,
-                            bus[t].green, bus[t].blue);
-                    printf("\t\t\t>>>Cand[%d]: %d %d %d\n", t, 
-                            candidates[i][t].red, candidates[i][t].green,
-                            candidates[i][t].blue);
-                }
-            }
+            copy_from_bus(bus, &candidates[i], piesa_h);
+
             int response = (int)argp;
             spu_write_out_intr_mbox(response);
         }
 
-
         /* Calculate the best candidate for this piece */
         int final_index, min_distance = MAX;
         for (i = 0; i < nr_candidati; i++) {
-            if (argp == 7 && i == 3 && j == 5)
-                printf("\t\t\t\t--------->>>0: %d %d %d \n",
-                        candidates[i][0].red, candidates[i][0].green,
-                        candidates[i][0].blue);
             distances[i] = calculate_manhattan(candidates[i],
                     vertical, piesa_h);
             if (argp == 7) {
@@ -195,7 +180,7 @@ int main(unsigned long long speid, unsigned long long argp,
 
         /* Free memory for candidates */
         if (j == piese_de_prelucrat - 1) {
-            for (i = 0; i < nr_candidati; i++)
+            for (i = 0; i < nr_candidati + 1; i++)
                 free(candidates[i]);
             free(candidates);
             free(distances);
@@ -218,7 +203,7 @@ int main(unsigned long long speid, unsigned long long argp,
         pointer_margin = spu_read_in_mbox();
         mfc_get((void *) bus, (void *)pointer_margin, 
                 (uint32_t) piesa_h * sizeof(struct dma_pixel), last_tag, 0, 0);
-        horizontal = copy_from_bus(bus, horizontal, piesa_h);
+        copy_from_bus(bus, &horizontal, piesa_h);
         printf("\tSPU %lld got margin from PPU\n", argp);
 
 
@@ -253,7 +238,7 @@ int main(unsigned long long speid, unsigned long long argp,
 
             mfc_get((void *) bus, (void *)pointer_margin, 
                     (uint32_t) piesa_w * sizeof(struct dma_pixel), last_tag, 0, 0);
-            candidates[i] = copy_from_bus(bus, candidates[i], piesa_h);
+            copy_from_bus(bus, &candidates[i], piesa_h);
 
             int response = (int)argp;
             spu_write_out_intr_mbox(response);
@@ -305,7 +290,14 @@ int main(unsigned long long speid, unsigned long long argp,
         pointer_margin = spu_read_in_mbox();
         mfc_get((void *) bus, (void *)pointer_margin, 
                 (uint32_t) piesa_h * sizeof(struct dma_pixel), last_tag, 0, 0);
-        vertical = copy_from_bus(bus, vertical, piesa_h);
+        copy_from_bus(bus, &vertical, piesa_h);
+        if (j == 15 && argp == 7) {
+            int t = 0;
+            for (t = 0; t < piesa_h; t++) {
+            printf("\t\t\t\t-------->SPU 7: vertical[%d]: %d %d %d\n",
+                    t, vertical[t].red, vertical[t].green, vertical[t].blue);
+            }
+        }
         int response = (int)argp;
         spu_write_out_intr_mbox(response);
 
@@ -314,7 +306,14 @@ int main(unsigned long long speid, unsigned long long argp,
         pointer_margin = spu_read_in_mbox();
         mfc_get((void *) bus, (void *)pointer_margin, 
                 (uint32_t) piesa_h * sizeof(struct dma_pixel), last_tag, 0, 0);
-        horizontal = copy_from_bus(bus, horizontal, piesa_h);
+        copy_from_bus(bus, &horizontal, piesa_h);
+        if (j == 15 && argp == 7) {
+            int t = 0;
+            for (t = 0; t < piesa_h; t++) {
+            printf("\t\t\t\t-------->SPU 7: horizontal[%d]: %d %d %d\n",
+                    t, vertical[t].red, vertical[t].green, vertical[t].blue);
+            }
+        }
         response = (int)argp;
         spu_write_out_intr_mbox(response);
 
@@ -327,19 +326,19 @@ int main(unsigned long long speid, unsigned long long argp,
 
         if (j == 0) {
             /* Get the horizontal and vertical candidates */
-            h_candidates = malloc_align(nr_candidati *
+            h_candidates = malloc_align((nr_candidati + 1) *
                     sizeof(struct pixel *), 4);
             if (!h_candidates) {
                 perror("Error on allocating candidates");
                 return -1;
             }
-            v_candidates = malloc_align(nr_candidati *
+            v_candidates = malloc_align((nr_candidati + 1) *
                     sizeof(struct pixel *), 4);
             if (!v_candidates) {
                 perror("Error on allocating candidates, rest of puzzle");
                 return -1;
             }
-            for (i = 0; i < nr_candidati; i++) {
+            for (i = 0; i < nr_candidati + 1; i++) {
                 h_candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
                 v_candidates[i] = malloc_align(piesa_h * sizeof(struct pixel), 4);
                 if (!h_candidates[i] || !v_candidates[i]) {
@@ -352,8 +351,8 @@ int main(unsigned long long speid, unsigned long long argp,
             }
             printf("\tSPU %lld allocated rest: h at %d, v at %d\n",
                     argp, h_candidates[0], v_candidates[0]);
-            h_distances = malloc_align(nr_candidati * sizeof(int), 4);
-            v_distances = malloc_align(nr_candidati * sizeof(int), 4);
+            h_distances = malloc_align((nr_candidati + 1) * sizeof(int), 4);
+            v_distances = malloc_align((nr_candidati + 1)* sizeof(int), 4);
         }
         for (i = 0; i < nr_candidati; i++) {
             /* Get the pointer to the horizontal top margin */
@@ -361,7 +360,7 @@ int main(unsigned long long speid, unsigned long long argp,
             pointer_margin = spu_read_in_mbox();
             mfc_get((void *) bus, (void *)pointer_margin, 
                     (uint32_t) piesa_w * sizeof(struct dma_pixel), last_tag, 0, 0);
-            h_candidates[i] = copy_from_bus(bus, h_candidates[i], piesa_h);
+            copy_from_bus(bus, &h_candidates[i], piesa_h);
             int response = (int)argp;
             spu_write_out_intr_mbox(response);
 
@@ -370,11 +369,29 @@ int main(unsigned long long speid, unsigned long long argp,
             pointer_margin = spu_read_in_mbox();
             mfc_get((void *) bus, (void *)pointer_margin, 
                     (uint32_t) piesa_h * sizeof(struct dma_pixel), last_tag, 0, 0);
-            v_candidates[i] = copy_from_bus(bus, v_candidates[i], piesa_h);
+            if (i == 5 && argp == 7 && j == 15) {
+                int t = 0;
+                for (t = 0; t < piesa_h; t++) {
+                    printf("\t\t\t\tSPU bus[%d] v = %d %d %d\n",
+                            t, bus[t].red, bus[t].green, bus[t].blue);
+                }
+            }
+            copy_from_bus(bus, &v_candidates[i], piesa_h);
             spu_write_out_intr_mbox(response);
         }
         printf("\tSPU %lld got all the candidates for the rest of the puzzle from PPU\n", argp);
 
+        if (argp == 7 && j == 15) {
+            int t = 0;
+            for (t = 0; t < piesa_h; t++) {
+                printf("\t\t\t\tSPU after[%d] h = %d %d %d\n",
+                        t, h_candidates[5][t].red, h_candidates[5][t].green,
+                        h_candidates[5][t].blue);
+                printf("\t\t\t\tSPU after[%d] v = %d %d %d\n",
+                        t, v_candidates[5][t].red, v_candidates[5][t].green,
+                        v_candidates[5][t].blue);
+            }
+        }
         /* Calculate the best candidate for this piece ___COLUMN */
         int final_index, min_distance = MAX;
         for (i = 0; i < nr_candidati; i++) {
@@ -382,6 +399,10 @@ int main(unsigned long long speid, unsigned long long argp,
                     horizontal, piesa_w);
             v_distances[i] = calculate_manhattan(v_candidates[i],
                     vertical, piesa_h);
+            if (argp == 7) {
+                printf("\t\t\t\t---=== SPU 7 gaseste distanta %d, cand %d\n",
+                        h_distances[i] + v_distances[i], i);
+            }
             if (h_distances[i] + v_distances[i] < min_distance) {
                 min_distance = h_distances[i] + v_distances[i];
                 final_index = i;
