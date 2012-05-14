@@ -1,0 +1,38 @@
+Ghioc Constantin Claudiu 331CB
+Tema 4 ASC
+                    Puzzle Solver
+
+
+1. CERINTA
+    Rezolvarea unui puzzle folosind arhitectura Cell.
+
+2. RULARE TEST
+    Arhiva contine fisierele sursa pentru spu, ppu, un Makefile, un folder cu imagini de input si fisierul README.
+    Pentru rulare sunt 3 target-uri in Makefile: run1, run2, run3 pentru fiecare imagine de test: rainbow, aquarium, satellite.
+    Orice imagine rezultat este scrisa in fisierul output.ppm
+
+3. DETALII IMPLEMENTARE
+    
+    Intregul program este conceput in 3 etape: rezolvare primei linii, rezolvare primei coloane, rezolvarea restului de puzzle. Pentru fiecare pozitie care trebuie
+rezolvata din aceste 3 zone, PPU trebuie sa caute intr-un numar n de candidati ramasi nealesi. Acest numar n este impartit la numarul de SPU-uri (fiecare SPU ia un
+numar aproximativ egal de candidati).
+    PPU citeste imaginea data, initializeaza contextele, creaza threaduri pentru SPU si imparte acestora un numar egal de candidati pentru zonele din fiecare din
+cele trei etape. Pentru o pozitie din puzzle PPU trimite:
+    *   marginea verticala din stanga (pentru prima linie)
+    *   marginea orizontala de sus (pentru prima coloana)
+    *   amandoua marginile pentru restul puzzle-ului    -   sub forma a vectori de pixeli.
+    Dupa acest transfer PPU transmite SPU-ului marginile corespunzatoare (verticale si/sau orizontale in functie de regiune) candidatilor pentru acea pozitie.
+
+    SPU-urile primesc astfel unul sau doua modele de referinta (vectori de pixeli) cu care vor fi comparati candidatii, si vectorii care descriu marginile 
+candidatilor. Aceste date sunt stocate in memoria locala SPU, iar dupa transfer SPU-urile calculeaza distantele Manhattan pentru fiecare candidat (comparativ la
+marginile trimise initial ale vecinilor) si intorc doua rezultate: indexul candidatului cu distanta minima si distanta calculata pentru acesta.
+    Distantele sunt sumele diferentelor dintre pixelii candidati si pixelii referinta in modul. Pentru zona a 3-a distanta am calculat-o adunand distantele atat
+pe orizontala cat si pe verticala (relativ la vecinul din stanga si la cel de deasupra).
+    PPU va strange de la fiecare SPU rezultatele (distantele si indecsii), calculeaza distanta minima, indexul candidatului cu distanta minima si pozitioneaza 
+piesa potrivita in puzzle-ul final (astfel incat aceasta sa fie referinta pentru urmatorii candidati).
+
+    Transferul vectorilor se face prin DMA, confirmarea primirii datelor, sincronizarea fiind realizate prin mailbox cu intreruperi. Desi initial am retinut pixelii
+in PPU sub forma a trei variabile de tip int, am ales char pentru a reduce memoria folosita. 
+
+4.  PROBLEME
+    Programul rezolva corect testele 2 si 3 insa la testul 1 ultima linie este gresita. Am identificat problema undeva in SPU, insa nu am reusit sa o mai rezolv.
